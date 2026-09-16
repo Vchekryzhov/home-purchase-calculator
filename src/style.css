@@ -1,0 +1,35 @@
+:root { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #0f172a; background: #f5f7f4; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #f5f7f4; }
+main { max-width: 1280px; padding: 32px 24px 48px; margin: auto; }
+header { display: flex; gap: 16px; justify-content: space-between; align-items: end; margin-bottom: 32px; }
+.eyebrow { color: #0f766e; font-size: 14px; font-weight: 700; margin-bottom: 10px; }
+h1 { margin: 0; font-size: clamp(28px, 4vw, 40px); line-height: 1.08; letter-spacing: -.04em; }
+header p { margin: 10px 0 0; max-width: 650px; color: #64748b; line-height: 1.55; }
+button { cursor: pointer; border: 1px solid #dbe3e8; border-radius: 12px; background: #fff; color: #334155; font: inherit; padding: 10px 15px; white-space: nowrap; }
+button:hover { background: #f8fafc; }
+.layout { display: grid; grid-template-columns: 390px minmax(0, 1fr); gap: 24px; align-items: start; }
+.panel, .card { background: #fff; border: 1px solid #dbe3e8; border-radius: 24px; box-shadow: 0 18px 55px rgba(15, 23, 42, .055); }
+.panel { padding: 24px; }
+.panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }.reset-icon { display: grid; width: 34px; height: 34px; place-items: center; padding: 0; border-radius: 10px; color: #0f766e; font-size: 20px; line-height: 1; }
+h2 { margin: 0; letter-spacing: -.025em; font-size: 20px; }
+.muted { color: #64748b; font-size: 14px; line-height: 1.5; }
+.inputs { display: grid; gap: 17px; margin-top: 22px; }
+label { display: block; font-size: 14px; font-weight: 650; color: #1e293b; }
+label b { float: right; color: #94a3b8; font-weight: 400; font-size: 12px; }
+input[type=number] { width: 100%; height: 44px; margin-top: 8px; border: 1px solid #dbe3e8; border-radius: 11px; background: #fff; padding: 0 12px; color: #0f172a; font: inherit; font-size: 16px; }
+.currency-field { position: relative; }.currency-field input { width: 100%; height: 44px; margin-top: 8px; border: 1px solid #dbe3e8; border-radius: 11px; background: #fff; padding: 0 36px 0 12px; color: #0f172a; font: inherit; font-size: 16px; }.currency-field span { position: absolute; right: 12px; bottom: 12px; color: #64748b; font-size: 15px; font-weight: 500; }
+input:focus { outline: 3px solid #ccfbf1; border-color: #0f766e; }
+.check { display: flex; gap: 10px; align-items: flex-start; margin-top: 20px; padding: 13px; border: 1px solid #b7e8dd; border-radius: 16px; background: #f0fdfa; font-size: 14px; }
+.check input { margin-top: 3px; accent-color: #0f766e; }
+.check strong { display: block; }.check em { display: block; color: #64748b; font-weight: 400; font-style: normal; line-height: 1.45; margin-top: 3px; }
+.cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.card { padding: 24px; min-height: 342px; }.mortgage { color: #fff; border: 0; background: #123e42; box-shadow: 0 18px 55px rgba(18, 62, 66, .18); }.cash { background: #fffaf0; border-color: #f5d89b; }
+.kicker { margin: 0; color: #bceae4; font-size: 14px; font-weight: 650; }.cash .kicker { color: #9a5c00; }.card h2 { margin-top: 4px; }
+.mortgage-date { color: #bceae4; }
+.big-label { margin: 34px 0 4px; font-size: 14px; color: #bceae4; }.cash .big-label { color: #866520; }.big { margin: 0; font-weight: 750; font-size: 30px; letter-spacing: -.045em; }
+dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 12px; margin: 28px 0 0; padding-top: 20px; border-top: 1px solid rgba(255,255,255,.18); }.cash dl { border-color: #f5d89b; color: #334155; }dt { font-size: 13px; color: #bceae4; }.cash dt { color: #866520; }dd { margin: 5px 0 0; font-size: 14px; font-weight: 700; line-height: 1.35; }.wide { grid-column: 1 / -1; }
+.bottom { display: grid; grid-template-columns: 1.15fr .85fr; gap: 16px; margin-top: 18px; }.bottom .card { min-height: auto; }.threshold dl { border-color: #dbe3e8; color: #0f172a; }.threshold dt { color: #64748b; }.year { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }.year > div { padding: 14px; border-radius: 16px; background: #f8fafc; }.year small { color: #64748b; display: block; }.year strong { display: block; margin-top: 5px; font-size: 18px; letter-spacing: -.02em; }.how { background: #f0fdfa; border-color: #b7e8dd; }.how p { line-height: 1.55; margin: 10px 0 0; color: #475569; font-size: 14px; }
+.warning { margin: 16px 0 0; padding: 14px 16px; color: #9f1239; background: #fff1f2; border: 1px solid #fecdd3; border-radius: 16px; font-size: 14px; line-height: 1.45; }.empty { margin-top: 32px; padding: 16px; border: 1px solid #f5d89b; border-radius: 16px; color: #78350f; background: rgba(255,255,255,.72); font-size: 14px; line-height: 1.5; }
+@media (max-width: 900px) { .layout { grid-template-columns: 1fr; }.inputs { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 620px) { main { padding: 22px 16px 32px; } header { align-items: start; flex-direction: column; margin-bottom: 20px; }.inputs, .cards, .bottom, .year { grid-template-columns: 1fr; }.panel, .card { padding: 20px; border-radius: 20px; } }
