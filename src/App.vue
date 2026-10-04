@@ -63,8 +63,11 @@ const CASHFLOW_SEGMENTS = [
 ];
 const cashflow = computed(() => buildCashflow(inputs, repaymentMode.value, { needed: renovationNeeded.value, cost: renovationCost.value, months: renovationMonths.value, funding: renovationFunding.value }));
 const cashflowEl = ref(null);
+const cashflowError = ref(false);
 let cashflowChart = null;
 const MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+const MONTHS_FULL = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+const formatMonthYear = (month) => { const date = addMonths(new Date(), month); return `${MONTHS_FULL[date.getMonth()]} ${date.getFullYear()}`; };
 const formatMonthTick = (value) => { const date = new Date(value); return `${MONTHS_SHORT[date.getMonth()]} ${String(date.getFullYear()).slice(2)}`; };
 const buildCashflowOption = (data) => {
   const monthDate = (month) => addMonths(new Date(), month).getTime();
@@ -78,14 +81,9 @@ const buildCashflowOption = (data) => {
     data: data.rows.map((row) => Math.round(segment.pick(row)))
   }));
   const marks = [];
-  if (data.dealMonth > 0) marks.push({ xAxis: data.dealMonth, label: { formatter: 'Сделка', position: 'insideEndTop', color: '#334155' }, lineStyle: { color: '#334155', type: 'dashed', width: 1.5 } });
-  if (data.moveMonth > data.dealMonth) marks.push({ xAxis: data.moveMonth, label: { formatter: 'Переезд', position: 'insideEndTop', color: '#334155' }, lineStyle: { color: '#334155', type: 'dashed', width: 1.5 } });
+  if (data.dealMonth > 0) marks.push({ xAxis: data.dealMonth, label: { formatter: 'Сделка', position: 'insideEndTop', rotate: 0, align: 'right', offset: [-6, 0], color: '#334155', fontSize: 11 }, lineStyle: { color: '#334155', type: 'dashed', width: 1.5 } });
+  if (data.moveMonth > data.dealMonth) marks.push({ xAxis: data.moveMonth, label: { formatter: 'Переезд', position: 'insideEndTop', rotate: 0, align: 'left', offset: [6, 0], color: '#334155', fontSize: 11 }, lineStyle: { color: '#334155', type: 'dashed', width: 1.5 } });
   if (marks.length) series[0].markLine = { symbol: 'none', silent: true, animation: false, data: marks };
-    const total = data.rows.length;
-    const windowStart = Math.max(0, data.dealMonth - 12);
-    const windowEnd = Math.min(total, windowStart + 48);
-    const zoomStart = Math.round(windowStart / Math.max(1, total) * 1000) / 10;
-    const zoomEnd = Math.round(windowEnd / Math.max(1, total) * 1000) / 10;
     return {
       animationDuration: 150,
     tooltip: {
@@ -99,7 +97,7 @@ const buildCashflowOption = (data) => {
         const total = points.reduce((acc, point) => acc + (point.value ?? 0), 0);
         const rowsHtml = points.filter((point) => (point.value ?? 0) > 0).map((point) => `<div style="display:flex;justify-content:space-between;gap:18px"><span>${point.marker}${point.seriesName}</span><b>${money.format(point.value)}</b></div>`).join('');
         const row = data.rows[points[0].dataIndex];
-        return `<div style="min-width:210px"><div style="color:#94a3b8;font-size:11px;margin-bottom:4px">${formatDate(addMonths(new Date(), row.month))}</div>${rowsHtml}<div style="display:flex;justify-content:space-between;gap:18px;border-top:1px solid rgba(255,255,255,.16);margin-top:6px;padding-top:5px"><span>Всего в месяц</span><b>${money.format(total)}</b></div></div>`;
+        return `<div style="min-width:210px"><div style="color:#94a3b8;font-size:11px;margin-bottom:4px">${formatMonthYear(row.month)}</div>${rowsHtml}<div style="display:flex;justify-content:space-between;gap:18px;border-top:1px solid rgba(255,255,255,.16);margin-top:6px;padding-top:5px"><span>Всего в месяц</span><b>${money.format(total)}</b></div></div>`;
       }
     },
     legend: { top: 0, itemWidth: 14, itemHeight: 10, itemGap: 14, textStyle: { color: '#475569', fontSize: 12 } },
@@ -107,24 +105,39 @@ const buildCashflowOption = (data) => {
     xAxis: { type: 'category', data: categories, axisLine: { lineStyle: { color: '#dbe3e8' } }, axisTick: { show: false }, axisLabel: { color: '#64748b', fontSize: 11, hideOverlap: true } },
     yAxis: { type: 'value', axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#64748b', fontSize: 11, formatter: (value) => plainNumber.format(value) }, splitLine: { lineStyle: { color: '#e2e8f0' } } },
     dataZoom: [
-      { type: 'inside', filterMode: 'none', start: zoomStart, end: zoomEnd },
-      { type: 'slider', height: 20, bottom: 8, filterMode: 'none', start: zoomStart, end: zoomEnd, borderColor: '#dbe3e8', fillerColor: 'rgba(15, 118, 110, .12)', handleStyle: { color: '#0f766e' }, moveHandleStyle: { color: '#cbd5e1' }, emphasis: { handleStyle: { borderColor: '#0f766e' } }, textStyle: { color: '#64748b', fontSize: 10 }, labelFormatter: (value) => categories[Math.round(value)] ?? '' }
+      { type: 'inside', filterMode: 'none', start: 0, end: 100 },
+      { type: 'slider', height: 20, bottom: 8, filterMode: 'none', start: 0, end: 100, borderColor: '#dbe3e8', fillerColor: 'rgba(15, 118, 110, .12)', handleStyle: { color: '#0f766e' }, moveHandleStyle: { color: '#cbd5e1' }, emphasis: { handleStyle: { borderColor: '#0f766e' } }, textStyle: { color: '#64748b', fontSize: 10 }, labelFormatter: (value) => categories[Math.round(value)] ?? '' }
     ],
     series
   };
 };
+let cashflowChartEl = null;
+let cashflowObserver = null;
 const renderCashflow = () => {
-  if (!cashflowEl.value) return;
-  if (!cashflowChart) {
-    cashflowChart = echarts.init(cashflowEl.value);
-    new ResizeObserver(() => cashflowChart?.resize()).observe(cashflowEl.value);
+  if (!cashflowEl.value) {
+    if (cashflowChart) { cashflowChart.dispose(); cashflowChart = null; }
+    return;
   }
-  if (cashflow.value) cashflowChart.setOption(buildCashflowOption(cashflow.value), { notMerge: true });
-  else cashflowChart.clear();
+  try {
+    if (cashflowChart && cashflowChartEl !== cashflowEl.value) { cashflowChart.dispose(); cashflowChart = null; }
+    if (!cashflowChart) {
+      cashflowChart = echarts.init(cashflowEl.value);
+      cashflowChartEl = cashflowEl.value;
+      cashflowObserver?.disconnect();
+      cashflowObserver = new ResizeObserver(() => cashflowChart?.resize());
+      cashflowObserver.observe(cashflowEl.value);
+    }
+    const data = cashflow.value;
+    if (!data) { cashflowError.value = false; cashflowChart.clear(); return; }
+    const sane = data.rows.length && data.rows.every((row) => [row.savings, row.rent, row.renovation, row.interest, row.principal].every((value) => Number.isFinite(value)));
+    if (!sane) { cashflowError.value = true; cashflowChart.clear(); return; }
+    cashflowError.value = false;
+    cashflowChart.setOption(buildCashflowOption(data), { notMerge: true });
+  } catch { cashflowError.value = true; try { cashflowChart?.clear(); } catch { /* dead instance */ } }
 };
 watch(cashflow, renderCashflow, { flush: 'post' });
 onMounted(renderCashflow);
-onBeforeUnmount(() => { cashflowChart?.dispose(); cashflowChart = null; });
+onBeforeUnmount(() => { cashflowObserver?.disconnect(); cashflowChart?.dispose(); cashflowChart = null; });
 const reset = () => { Object.assign(inputs, DEFAULTS); focusedAmount.value = null; renovationNeeded.value = false; renovationFunding.value = 'before'; renovationMonths.value = 6; renovationCostDraft.value = null; renovationCostInput.value = ''; renovationFocused.value = false; };
 onMounted(() => { const context = document.modelContext; if (!context?.registerTool) return; context.registerTool({ name: 'configure_home_purchase_calculator', title: 'Рассчитать покупку недвижимости', description: 'Устанавливает параметры и возвращает сравнение ипотеки с накоплением.', inputSchema: { type: 'object', properties: { savings: { type: 'number', minimum: 0 }, monthlySavings: { type: 'number', minimum: 0 }, mortgageRate: { type: 'number', minimum: 0 }, propertyPrice: { type: 'number', minimum: 0 }, downPaymentPercent: { type: 'number', minimum: 0 }, inflation: { type: 'number', minimum: 0 }, rent: { type: 'number', minimum: 0 }, depositRate: { type: 'number', minimum: 0 } }, required: Object.keys(DEFAULTS), additionalProperties: false }, annotations: { readOnlyHint: false, untrustedContentHint: false }, execute(next) { Object.assign(inputs, next); const r = result.value; return { mortgageMonths: r.months === null ? null : Math.ceil(r.months), mortgagePayment: Math.round(r.payment), cashPurchaseMonths: r.cashPurchase?.month ?? null }; } }, { signal: new AbortController().signal }).catch(() => {}); });
 </script>
@@ -152,5 +165,5 @@ onMounted(() => { const context = document.modelContext; if (!context?.registerT
     <p v-else class="empty">Первоначальный взнос не накапливается в горизонте 60 лет.</p>
   </article>
   <article class="card cash"><p class="kicker">Копить до полной суммы</p><h2>Покупка за накопления</h2><template v-if="result.cashPurchase"><p class="big-label">Сможете купить через</p><p class="big">{{ duration(result.cashPurchase.month) }}</p><p class="muted">{{ formatDate(addMonths(new Date(), result.cashPurchase.month)) }}</p><dl><div><dt>Цена квартиры тогда</dt><dd>{{ money.format(result.cashPurchase.price) }}</dd></div><div><dt>Накопления</dt><dd>{{ money.format(result.cashPurchase.balance) }}</dd></div><div class="wide"><dt>Аренда за время ожидания</dt><dd>{{ money.format(result.cashPurchase.rentPaid) }}</dd></div><div v-if="renovationNeeded" class="wide"><dt>Дата переезда</dt><dd>{{ moveDate(result.cashPurchase.moveMonth) }}</dd></div></dl></template><p v-else class="empty">При этих параметрах накопления не догоняют стоимость недвижимости за 60 лет. Увеличьте ежемесячный взнос или доходность вклада.</p></article></div>
-  <div class="bottom"><article class="card threshold"><h2>Когда покупать?</h2><p class="muted">Самое выгодное время для покупки — когда проценты за первый месяц по кредиту ниже аренды.</p><template v-if="result.thresholdPurchase"><p class="big-label">Покупка через</p><p class="big">{{ duration(result.thresholdPurchase.month) }}</p><p class="muted">{{ formatDate(addMonths(new Date(), result.thresholdPurchase.month)) }}</p><div class="year"><div><small>Проценты в первый месяц</small><strong>{{ money.format(result.thresholdPurchase.firstMonthInterest) }}</strong></div><div><small>Аренда тогда</small><strong>{{ money.format(result.thresholdPurchase.rent) }}</strong></div></div><dl><div><dt>Сумма кредита</dt><dd>{{ money.format(result.thresholdPurchase.principal) }}</dd></div><div><dt>Бюджет на платёж</dt><dd>{{ money.format(result.thresholdPurchase.payment) }} / мес.</dd></div><div><dt>Срок выплаты</dt><dd>{{ duration(result.thresholdPurchase.months) }}</dd></div><div><dt>Переплата</dt><dd>{{ money.format(result.thresholdPurchase.overpayment) }}</dd></div><div class="wide"><dt>Последний платёж</dt><dd>{{ formatDate(addMonths(addMonths(new Date(), result.thresholdPurchase.month), result.thresholdPurchase.months)) }}</dd></div><div v-if="renovationNeeded"><dt>Переезд</dt><dd>{{ moveDate(result.thresholdPurchase.moveMonth) }}</dd></div><div v-if="renovationNeeded" class="wide"><dt>Аренда до переезда</dt><dd>{{ moveRent(result.thresholdPurchase.moveMonth) }}</dd></div></dl></template><p v-else class="empty">В горизонте 60 лет условия покупки не выполняются.</p></article><aside class="card how"><h2>Как считаем</h2><p>Ипотека доступна, когда накопления покрывают первоначальный взнос, а платёж позволяет погасить кредит максимум за 30 лет. Затем сравниваются проценты за первый месяц по кредиту и аренда. Ежемесячный платёж по кредиту — это сумма ежемесячных накоплений и текущей аренды: после покупки деньги за аренду переходят в платёж по кредиту.</p><p v-if="renovationNeeded && renovationFunding === 'before'">Квартира без ремонта: цель накоплений — первоначальный взнос плюс стоимость ремонта, обе суммы растут вместе с ценой недвижимости. Сделка, затем ремонт — в это время аренда продолжается, а платёж по кредиту обслуживается только из ежемесячных накоплений. Аренда переходит в платёж по кредиту после переезда.</p><p v-if="renovationNeeded && renovationFunding === 'after'">Ремонт после покупки: сделка — при накоплении первоначального взноса. Пока ремонт не оплачен, кредит обслуживается 30-летним аннуитетом, а излишек «накопления минус аннуитет» идёт на ремонт поэтапно. Переезд — когда завершены и работы, и оплата; после переезда свободные деньги ускоряют погашение.</p></aside></div><article v-if="cashflow" class="card cashflow-chart"><div><h2>Куда уходят деньги в месяц</h2><p class="muted">Каждая свеча — месяц: тело кредита, проценты, ремонт, накопления и аренда. Колесо мыши или пинч — масштаб, перетаскивание — прокрутка, полоса снизу — общий вид. Пунктирные линии — сделка и переезд, наведите для даты.</p></div><div ref="cashflowEl" class="cashflow-echarts"></div></article></section></div></main>
+  <div class="bottom"><article class="card threshold"><h2>Когда покупать?</h2><p class="muted">Самое выгодное время для покупки — когда проценты за первый месяц по кредиту ниже аренды.</p><template v-if="result.thresholdPurchase"><p class="big-label">Покупка через</p><p class="big">{{ duration(result.thresholdPurchase.month) }}</p><p class="muted">{{ formatDate(addMonths(new Date(), result.thresholdPurchase.month)) }}</p><div class="year"><div><small>Проценты в первый месяц</small><strong>{{ money.format(result.thresholdPurchase.firstMonthInterest) }}</strong></div><div><small>Аренда тогда</small><strong>{{ money.format(result.thresholdPurchase.rent) }}</strong></div></div><dl><div><dt>Сумма кредита</dt><dd>{{ money.format(result.thresholdPurchase.principal) }}</dd></div><div><dt>Бюджет на платёж</dt><dd>{{ money.format(result.thresholdPurchase.payment) }} / мес.</dd></div><div><dt>Срок выплаты</dt><dd>{{ duration(result.thresholdPurchase.months) }}</dd></div><div><dt>Переплата</dt><dd>{{ money.format(result.thresholdPurchase.overpayment) }}</dd></div><div class="wide"><dt>Последний платёж</dt><dd>{{ formatDate(addMonths(addMonths(new Date(), result.thresholdPurchase.month), result.thresholdPurchase.months)) }}</dd></div><div v-if="renovationNeeded"><dt>Переезд</dt><dd>{{ moveDate(result.thresholdPurchase.moveMonth) }}</dd></div><div v-if="renovationNeeded" class="wide"><dt>Аренда до переезда</dt><dd>{{ moveRent(result.thresholdPurchase.moveMonth) }}</dd></div></dl></template><p v-else class="empty">В горизонте 60 лет условия покупки не выполняются.</p></article><aside class="card how"><h2>Как считаем</h2><p>Ипотека доступна, когда накопления покрывают первоначальный взнос, а платёж позволяет погасить кредит максимум за 30 лет. Затем сравниваются проценты за первый месяц по кредиту и аренда. Ежемесячный платёж по кредиту — это сумма ежемесячных накоплений и текущей аренды: после покупки деньги за аренду переходят в платёж по кредиту.</p><p v-if="renovationNeeded && renovationFunding === 'before'">Квартира без ремонта: цель накоплений — первоначальный взнос плюс стоимость ремонта, обе суммы растут вместе с ценой недвижимости. Сделка, затем ремонт — в это время аренда продолжается, а платёж по кредиту обслуживается только из ежемесячных накоплений. Аренда переходит в платёж по кредиту после переезда.</p><p v-if="renovationNeeded && renovationFunding === 'after'">Ремонт после покупки: сделка — при накоплении первоначального взноса. Пока ремонт не оплачен, кредит обслуживается 30-летним аннуитетом, а излишек «накопления минус аннуитет» идёт на ремонт поэтапно. Переезд — когда завершены и работы, и оплата; после переезда свободные деньги ускоряют погашение.</p></aside></div><article class="card cashflow-chart"><div><h2>Куда уходят деньги в месяц</h2><p class="muted">Каждая свеча — месяц: тело кредита, проценты, ремонт, накопления и аренда. Колесо мыши или пинч — масштаб, перетаскивание — прокрутка, полоса снизу — общий вид. Пунктирные линии — сделка и переезд, наведите для даты.</p></div><div v-show="cashflow && !cashflowError" ref="cashflowEl" class="cashflow-echarts"></div><p v-if="cashflowError" class="warning">Не удалось построить график — проверьте параметры. Он вернётся, когда значения станут корректными.</p><p v-else-if="!cashflow" class="warning">При этих параметрах ипотечный план не строится — график недоступен.</p></article></section></div></main>
 </template>
