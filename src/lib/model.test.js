@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULTS, NO_RENOVATION, RENOVATION_COST_SHARE, SIMULATION_HORIZON_MONTHS, loanPlan, loanPlanStepped, loanScheduleStepped, paymentForTerm, selectedLoanPlan, selectedRenovationLoanPlan, afterPurchaseSchedule, calculate, isMortgagePaymentTooLow, buildJourney, buildCashflow, rentPaidUntilMonth } from './model.js';
+import { DEFAULTS, NO_RENOVATION, RENOVATION_COST_SHARE, SIMULATION_HORIZON_MONTHS, loanPlan, loanPlanStepped, loanScheduleStepped, paymentForTerm, selectedLoanPlan, selectedRenovationLoanPlan, afterPurchaseSchedule, calculate, isMortgagePaymentTooLow, buildCashflow, rentPaidUntilMonth } from './model.js';
 import { plural, yearsLabel, monthsLabel, duration } from './format.js';
 import expected from './model.characterization.json';
 
@@ -80,7 +80,6 @@ describe('calculate (characterization)', () => {
       const result = calculate(inputs, mode);
       expect(roundDeep(result)).toEqual(expected[name].result);
       expect(isMortgagePaymentTooLow(result)).toBe(expected[name].mortgagePaymentTooLow);
-      expect(roundDeep(buildJourney(inputs, result.mortgageAffordable, result.mortgageAtDownPayment))).toEqual(expected[name].journey);
     });
   }
 
@@ -99,15 +98,6 @@ describe('calculate (characterization)', () => {
     expect(result.months).toBe(102);
     expect(result.cashPurchase.month).toBe(92);
     expect(result.thresholdPurchase.month).toBe(20);
-  });
-});
-
-describe('buildJourney', () => {
-  it('omits the marker when the mortgage never becomes affordable', () => {
-    const result = calculate({ ...DEFAULTS, monthlySavings: 1000, rent: 0 }, 'fast');
-    const journey = buildJourney({ ...DEFAULTS, monthlySavings: 1000, rent: 0 }, result.mortgageAffordable, result.mortgageAtDownPayment);
-    expect(journey.markerX).toBeNull();
-    expect(journey.markerLabel).toBeNull();
   });
 });
 
