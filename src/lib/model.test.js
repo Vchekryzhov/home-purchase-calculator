@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULTS, NO_RENOVATION, RENOVATION_COST_SHARE, SIMULATION_HORIZON_MONTHS, loanPlan, loanPlanStepped, paymentForTerm, selectedLoanPlan, selectedRenovationLoanPlan, afterPurchaseSchedule, calculate, isMortgagePaymentTooLow, buildJourney, rentPaidUntilMonth } from './model.js';
+import { DEFAULTS, NO_RENOVATION, RENOVATION_COST_SHARE, SIMULATION_HORIZON_MONTHS, loanPlan, loanPlanStepped, loanScheduleStepped, paymentForTerm, selectedLoanPlan, selectedRenovationLoanPlan, afterPurchaseSchedule, calculate, isMortgagePaymentTooLow, buildJourney, buildCashflow, rentPaidUntilMonth } from './model.js';
 import { plural, yearsLabel, monthsLabel, duration } from './format.js';
 import expected from './model.characterization.json';
 
@@ -292,6 +292,77 @@ describe('rentPaidUntilMonth', () => {
   it('grows with the month index and is zero at move-in now', () => {
     expect(rentPaidUntilMonth(DEFAULTS, 0)).toBe(0);
     expect(rentPaidUntilMonth(DEFAULTS, 200)).toBeGreaterThan(rentPaidUntilMonth(DEFAULTS, 100));
+  });
+});
+
+describe('buildCashflow', () => {
+  const total = (row) => row.savings + row.rent + row.renovation + row.interest + row.principal;
+  const sum = (rows, key) => rows.reduce((acc, row) => acc + row[key], 0);
+  const zero = { ...DEFAULTS, inflation: 0, depositRate: 0 };
+
+  it('returns null when no feasible mortgage plan exists', () => {
+    expect(buildCashflow({ ...DEFAULTS, monthlySavings: 1000, rent: 0 }, 'fast')).toBeNull();
+  });
+
+  it('accumulation months split into savings and rent; loan months into principal and interest', () => {
+    const data = buildCashflow({ ...zero, rent: 0 }, 'fast');
+    expect(data.rows[0]).toEqual({ month: 0, savings: 50000, rent: 0, renovation: 0, interest: 0, principal: 0 });
+    const loanRow = data.rows[data.dealMonth];
+    expect(loanRow.rent).toBe(0);
+    expect(loanRow.principal).toBeGreaterThan(0);
+    expect(loanRow.interest).toBeGreaterThan(0);
+    expect(loanRow.principal + loanRow.interest).toBeCloseTo(50000, 1);
+  });
+
+  it('keeps every month total at savings-plus-rent (rent converts into the mortgage payment)', () => {
+    for (const [name, renovation] of [
+      ['no-renovation', NO_RENOVATION],
+      ['before', { needed: true, cost: 1500000, months: 6, funding: 'before' }],
+      ['after', { needed: true, cost: 1500000, months: 6, funding: 'after' }],
+    ]) {
+      const data = buildCashflow(DEFAULTS, 'fast', renovation);
+      const rentAt = (month) => 80000 * Math.pow(1.05, month / 12);
+      for (const row of data.rows) {
+        const expected = 50000 + (row.month < data.moveMonth ? rentAt(row.month) : 80000);
+        expect(total(row)).toBeCloseTo(expected, 0);
+      }
+      expect(data.rows.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('«накопить до»: renovation is spread over the accumulation months and sums to its indexed cost', () => {
+    const data = buildCashflow({ ...zero, propertyPrice: 2500000, savings: 0, monthlySavings: 100000, rent: 0 }, 'fast', { needed: true, cost: 300000, months: 6, funding: 'before' });
+    expect(data.dealMonth).toBe(8);
+    expect(data.moveMonth).toBe(14);
+    for (let month = 0; month < data.dealMonth; month += 1) {
+      expect(data.rows[month].renovation).toBeCloseTo(37500, 1);
+      expect(data.rows[month].savings).toBeCloseTo(62500, 1);
+    }
+    expect(sum(data.rows, 'renovation')).toBeCloseTo(300000, 1);
+    for (let month = data.dealMonth; month < data.moveMonth; month += 1) {
+      expect(data.rows[month].principal + data.rows[month].interest).toBeCloseTo(100000, 1);
+      expect(data.rows[month].rent).toBe(0);
+    }
+  });
+
+  it('«после покупки»: renovation equals the monthly surplus until the cost is covered', () => {
+    const data = buildCashflow({ ...zero, propertyPrice: 4000000, savings: 3400000, monthlySavings: 100000, rent: 0 }, 'fast', { needed: true, cost: 1200000, months: 6, funding: 'after' });
+    expect(data.dealMonth).toBe(0);
+    expect(data.moveMonth).toBe(14);
+    expect(sum(data.rows, 'renovation')).toBeCloseTo(1200000, 1);
+    for (let month = 0; month < 13; month += 1) {
+      expect(data.rows[month].renovation + data.rows[month].principal + data.rows[month].interest).toBeCloseTo(100000, 1);
+      expect(data.rows[month].savings).toBe(0);
+    }
+    expect(data.rows[13].renovation).toBeLessThan(data.rows[0].renovation);
+  });
+
+  it('loan payments match the amortization plan', () => {
+    const inputs = { ...zero, rent: 0, monthlySavings: 100000, propertyPrice: 2500000, savings: 0 };
+    const plan = calculate(inputs, 'fast').mortgageAtDownPayment;
+    const data = buildCashflow(inputs, 'fast');
+    expect(sum(data.rows, 'principal')).toBeCloseTo(plan.principal, 1);
+    expect(sum(data.rows, 'principal') + sum(data.rows, 'interest')).toBeCloseTo(plan.principal + plan.overpayment, 1);
   });
 });
 
