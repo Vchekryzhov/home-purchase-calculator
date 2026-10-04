@@ -23,6 +23,10 @@ h2 { margin: 0; letter-spacing: -.025em; font-size: 20px; }
 label { display: block; font-size: 14px; font-weight: 650; color: #1e293b; }.field-title { display: inline-flex; align-items: center; gap: 6px; }
 label b { float: right; color: #94a3b8; font-weight: 400; font-size: 12px; }
 .hint { position: relative; display: inline-grid; width: 18px; height: 18px; place-items: center; border: 1px solid #94a3b8; border-radius: 50%; color: #64748b; font-size: 12px; font-weight: 750; line-height: 1; cursor: default; }.hint::after { content: ""; position: absolute; z-index: 9; top: 100%; left: -8px; width: 292px; height: 12px; }.hint:focus { outline: 3px solid #ccfbf1; outline-offset: 2px; }.hint-popover { position: absolute; z-index: 10; top: calc(100% + 8px); left: -8px; width: 292px; padding: 12px; border-radius: 12px; background: #0f172a; color: #e2e8f0; font-size: 12px; font-weight: 450; line-height: 1.45; box-shadow: 0 14px 30px rgba(15, 23, 42, .24); opacity: 0; pointer-events: none; transform: translateY(-4px); transition: opacity .15s ease .25s, transform .15s ease .25s; }.hint:hover .hint-popover, .hint:focus .hint-popover { opacity: 1; pointer-events: auto; transform: translateY(0); transition-delay: 0s; }.hint-popover a { color: #99f6e4; font-weight: 650; }
+.funding-explain { margin: 10px 0 0; }
+.hint-popover table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+.hint-popover th, .hint-popover td { padding: 4px 6px; border: 1px solid rgba(226, 232, 240, .2); text-align: left; }
+.hint-popover th { font-weight: 650; }
 input[type=number] { width: 100%; height: 44px; margin-top: 8px; border: 1px solid #dbe3e8; border-radius: 11px; background: #fff; padding: 0 12px; color: #0f172a; font: inherit; font-size: 16px; }
 .currency-field { position: relative; }.currency-field input { width: 100%; height: 44px; margin-top: 8px; border: 1px solid #dbe3e8; border-radius: 11px; background: #fff; padding: 0 36px 0 12px; color: #0f172a; font: inherit; font-size: 16px; }.currency-field span { position: absolute; right: 12px; bottom: 12px; color: #64748b; font-size: 15px; font-weight: 500; }
 input:focus { outline: 3px solid #ccfbf1; border-color: #0f766e; }
@@ -53,4 +57,4 @@ dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 
 .state-toggle.mini button { min-height: 34px; padding: 6px 12px; font-size: 12.5px; }
 
 @media (max-width: 900px) { .layout { grid-template-columns: 1fr; }.inputs { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 620px) { main { padding: 22px 16px 32px; } header { align-items: start; flex-direction: column; margin-bottom: 20px; }.inputs, .cards, .bottom, .year { grid-template-columns: 1fr; }.panel, .card { padding: 20px; border-radius: 20px; }.hint-popover { left: -160px; max-width: calc(100vw - 176px); } }
+@media (max-width: 620px) { main { padding: 22px 16px 32px; } header { align-items: start; flex-direction: column; margin-bottom: 20px; }.inputs, .cards, .bottom, .year { grid-template-columns: 1fr; }.panel, .card { padding: 20px; border-radius: 20px; }.hint-popover { left: -160px; max-width: calc(100vw - 176px); }.funding-explain .hint-popover { left: 0; } }
