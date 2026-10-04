@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULTS, NO_RENOVATION, RENOVATION_COST_SHARE, SIMULATION_HORIZON_MONTHS, loanPlan, loanPlanStepped, loanScheduleStepped, paymentForTerm, selectedLoanPlan, selectedRenovationLoanPlan, allocateAfterPurchase, calculate, isMortgagePaymentTooLow, buildCashflow, rentPaidUntilMonth } from './model.js';
+import { DEFAULTS, NO_RENOVATION, RENOVATION_COST_SHARE, SIMULATION_HORIZON_MONTHS, loanPlan, loanPlanStepped, loanScheduleStepped, paymentForTerm, selectedLoanPlan, selectedRenovationLoanPlan, allocateAfterPurchase, calculate, isMortgagePaymentTooLow, isPostPurchaseAvailable, buildCashflow, rentPaidUntilMonth } from './model.js';
 import { plural, yearsLabel, monthsLabel, duration } from './format.js';
 import expected from './model.characterization.json';
 
@@ -314,6 +314,39 @@ describe('renovation: calculate «после покупки»', () => {
     expect(result.cashPurchase.month).toBe(163);
     expect(result.cashPurchase.moveMonth).toBe(222);
     expect(result.cashPurchase.rentPaid).toBeCloseTo(28787556.94, 1);
+  });
+});
+
+describe('renovation: isPostPurchaseAvailable', () => {
+  const renoAfter = { needed: true, cost: 1500000, months: 6, funding: 'after' };
+
+  it('available when financing lag equals renovation months', () => {
+    const result = calculate(DEFAULTS, 'annuity', renoAfter);
+    expect(result.mortgageAffordable.month).toBe(159);
+    expect(result.mortgageAffordable.moveMonth).toBe(165);
+    expect(isPostPurchaseAvailable(result, 6)).toBe(true);
+  });
+
+  it('unavailable when financing lag exceeds renovation months', () => {
+    const result = calculate({ ...DEFAULTS, savings: 7000000 }, 'annuity', renoAfter);
+    expect(result.hasDownPayment).toBe(true);
+    expect(result.months).not.toBeNull();
+    expect(result.moveMonth).toBe(201);
+    expect(isPostPurchaseAvailable(result, 6)).toBe(false);
+  });
+
+  it('unavailable when no post-purchase plan exists', () => {
+    const result = calculate({ ...DEFAULTS, monthlySavings: 15000 }, 'annuity', renoAfter);
+    expect(result.mortgageAtDownPayment.months).toBeNull();
+    expect(result.mortgageAffordable).toBeNull();
+    expect(isPostPurchaseAvailable(result, 6)).toBe(false);
+  });
+
+  it('available with rich savings', () => {
+    const result = calculate({ ...DEFAULTS, savings: 8000000 }, 'fast', renoAfter);
+    expect(result.hasDownPayment).toBe(true);
+    expect(result.moveMonth).toBe(6);
+    expect(isPostPurchaseAvailable(result, 6)).toBe(true);
   });
 });
 

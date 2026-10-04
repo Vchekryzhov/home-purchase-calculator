@@ -16,6 +16,9 @@ h2 { margin: 0; letter-spacing: -.025em; font-size: 20px; }
 .muted { color: #64748b; font-size: 14px; line-height: 1.5; }
 .inputs { display: grid; gap: 17px; margin-top: 22px; }
 .state-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 22px; }.state-toggle button { min-height: 42px; padding: 8px 10px; font-size: 13px; font-weight: 650; }.state-toggle button.active { border-color: #0f766e; background: #f0fdfa; color: #0f766e; box-shadow: inset 0 0 0 1px #5eead4; }.state-toggle small { display: block; margin-top: 2px; color: #64748b; font-size: 11px; font-weight: 400; white-space: normal; }.state-toggle.funding { margin-top: 17px; }
+.funding-hint { color: #b45309; font-size: 14px; line-height: 1.5; margin: 10px 0 0; }
+.state-toggle button:disabled { opacity: 0.5; cursor: default; }
+.state-toggle button:disabled:hover, .state-toggle button:disabled:focus-visible { background: #fff; }
 .renovation-fields { margin-top: 17px; }
 label { display: block; font-size: 14px; font-weight: 650; color: #1e293b; }.field-title { display: inline-flex; align-items: center; gap: 6px; }
 label b { float: right; color: #94a3b8; font-weight: 400; font-size: 12px; }

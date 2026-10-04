@@ -284,3 +284,14 @@ export const buildCashflow = (rawInputs, repaymentMode, renovation = NO_RENOVATI
 };
 
 export const isMortgagePaymentTooLow = (result) => result.hasDownPayment ? result.months === null : result.firstMortgagePaymentTooLow;
+
+export const isPostPurchaseAvailable = (result, renovationMonths) => {
+  const plan = result.hasDownPayment
+    ? (result.months === null ? null : result)                      // current plan exists
+    : (result.mortgageAtDownPayment && result.mortgageAtDownPayment.months !== null
+        ? result.mortgageAtDownPayment
+        : (result.mortgageAffordable && result.mortgageAffordable.months !== null ? result.mortgageAffordable : null));
+  if (!plan) return false;
+  const lag = plan === result ? result.moveMonth : plan.moveMonth - plan.month;
+  return lag <= renovationMonths;
+};
