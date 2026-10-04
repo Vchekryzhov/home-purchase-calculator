@@ -28,7 +28,10 @@ const setAmount = (key, event) => {
 const blurAmount = (key) => { if (focusedAmount.value === key) focusedAmount.value = null; };
 const addMonths = (date, months) => { const result = new Date(date); result.setMonth(result.getMonth() + months); return result; };
 const formatDate = (date) => new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }).format(date);
-const duration = (months) => { const total = Math.ceil(months); const years = Math.floor(total / 12); const rest = total % 12; return !years ? `${rest} мес.` : rest ? `${years} г. ${rest} мес.` : `${years} г.`; };
+const plural = (count, one, few, many) => { const tens = count % 100, units = count % 10; return tens >= 11 && tens <= 14 ? many : units === 1 ? one : units >= 2 && units <= 4 ? few : many; };
+const yearsLabel = (count) => `${count} ${plural(count, 'год', 'года', 'лет')}`;
+const monthsLabel = (count) => `${count} ${plural(count, 'месяц', 'месяца', 'месяцев')}`;
+const duration = (months) => { const total = Math.ceil(months); const years = Math.floor(total / 12); const rest = total % 12; return !years ? monthsLabel(rest) : rest ? `${yearsLabel(years)} ${monthsLabel(rest)}` : yearsLabel(years); };
 const loanPlan = (principal, payment, annualRate, maxMonths = 360) => {
   if (principal <= 0) return { months: 0, overpayment: 0, firstMonthInterest: 0 };
   if (payment <= 0) return null;
@@ -148,8 +151,8 @@ const journey = computed(() => {
     markerX: markerMonth === null ? null : x(markerMonth),
     maximum,
     middleX: x(horizon / 2),
-    middleLabel: `${Math.round(horizon / 24)} лет`,
-    endLabel: `${Math.round(horizon / 12)} лет`,
+    middleLabel: yearsLabel(Math.round(horizon / 24)),
+    endLabel: yearsLabel(Math.round(horizon / 12)),
     markerLabel: markerMonth === null ? null : duration(markerMonth)
   };
 });
