@@ -13,6 +13,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "echarts": "^6.1.0",
     "vue": "3.5.30"
   },
   "devDependencies": {
