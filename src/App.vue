@@ -68,17 +68,18 @@ const MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'май', 'июн'
 const formatMonthTick = (value) => { const date = new Date(value); return `${MONTHS_SHORT[date.getMonth()]} ${String(date.getFullYear()).slice(2)}`; };
 const buildCashflowOption = (data) => {
   const monthDate = (month) => addMonths(new Date(), month).getTime();
+  const categories = data.rows.map((row) => { const date = new Date(monthDate(row.month)); return `${MONTHS_SHORT[date.getMonth()]} ${String(date.getFullYear()).slice(2)}`; });
   const series = CASHFLOW_SEGMENTS.map((segment) => ({
     name: segment.label,
     type: 'bar',
     stack: 'month',
     barMaxWidth: 34,
     itemStyle: { color: segment.color },
-    data: data.rows.map((row) => [monthDate(row.month), Math.round(segment.pick(row))])
+    data: data.rows.map((row) => Math.round(segment.pick(row)))
   }));
   const marks = [];
-  if (data.dealMonth > 0) marks.push({ xAxis: monthDate(data.dealMonth), label: { formatter: 'Сделка', position: 'insideEndTop', color: '#334155' }, lineStyle: { color: '#334155', type: 'dashed', width: 1.5 } });
-  if (data.moveMonth > data.dealMonth) marks.push({ xAxis: monthDate(data.moveMonth), label: { formatter: 'Переезд', position: 'insideEndTop', color: '#334155' }, lineStyle: { color: '#334155', type: 'dashed', width: 1.5 } });
+  if (data.dealMonth > 0) marks.push({ xAxis: data.dealMonth, label: { formatter: 'Сделка', position: 'insideEndTop', color: '#334155' }, lineStyle: { color: '#334155', type: 'dashed', width: 1.5 } });
+  if (data.moveMonth > data.dealMonth) marks.push({ xAxis: data.moveMonth, label: { formatter: 'Переезд', position: 'insideEndTop', color: '#334155' }, lineStyle: { color: '#334155', type: 'dashed', width: 1.5 } });
   if (marks.length) series[0].markLine = { symbol: 'none', silent: true, animation: false, data: marks };
     const total = data.rows.length;
     const windowStart = Math.max(0, data.dealMonth - 12);
@@ -95,18 +96,19 @@ const buildCashflowOption = (data) => {
       padding: [10, 12],
       textStyle: { color: '#e2e8f0', fontSize: 12 },
       formatter: (points) => {
-        const total = points.reduce((acc, point) => acc + (point.value?.[1] ?? 0), 0);
-        const rowsHtml = points.filter((point) => (point.value?.[1] ?? 0) > 0).map((point) => `<div style="display:flex;justify-content:space-between;gap:18px"><span>${point.marker}${point.seriesName}</span><b>${money.format(point.value[1])}</b></div>`).join('');
-        return `<div style="min-width:210px"><div style="color:#94a3b8;font-size:11px;margin-bottom:4px">${formatDate(new Date(points[0].value[0]))}</div>${rowsHtml}<div style="display:flex;justify-content:space-between;gap:18px;border-top:1px solid rgba(255,255,255,.16);margin-top:6px;padding-top:5px"><span>Всего в месяц</span><b>${money.format(total)}</b></div></div>`;
+        const total = points.reduce((acc, point) => acc + (point.value ?? 0), 0);
+        const rowsHtml = points.filter((point) => (point.value ?? 0) > 0).map((point) => `<div style="display:flex;justify-content:space-between;gap:18px"><span>${point.marker}${point.seriesName}</span><b>${money.format(point.value)}</b></div>`).join('');
+        const row = data.rows[points[0].dataIndex];
+        return `<div style="min-width:210px"><div style="color:#94a3b8;font-size:11px;margin-bottom:4px">${formatDate(addMonths(new Date(), row.month))}</div>${rowsHtml}<div style="display:flex;justify-content:space-between;gap:18px;border-top:1px solid rgba(255,255,255,.16);margin-top:6px;padding-top:5px"><span>Всего в месяц</span><b>${money.format(total)}</b></div></div>`;
       }
     },
     legend: { top: 0, itemWidth: 14, itemHeight: 10, itemGap: 14, textStyle: { color: '#475569', fontSize: 12 } },
     grid: { left: 64, right: 10, top: 34, bottom: 58 },
-    xAxis: { type: 'time', axisLine: { lineStyle: { color: '#dbe3e8' } }, axisTick: { show: false }, axisLabel: { color: '#64748b', fontSize: 11, formatter: (value) => formatMonthTick(value), hideOverlap: true } },
+    xAxis: { type: 'category', data: categories, axisLine: { lineStyle: { color: '#dbe3e8' } }, axisTick: { show: false }, axisLabel: { color: '#64748b', fontSize: 11, hideOverlap: true } },
     yAxis: { type: 'value', axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#64748b', fontSize: 11, formatter: (value) => plainNumber.format(value) }, splitLine: { lineStyle: { color: '#e2e8f0' } } },
     dataZoom: [
       { type: 'inside', filterMode: 'none', start: zoomStart, end: zoomEnd },
-      { type: 'slider', height: 20, bottom: 8, filterMode: 'none', start: zoomStart, end: zoomEnd, borderColor: '#dbe3e8', fillerColor: 'rgba(15, 118, 110, .12)', handleStyle: { color: '#0f766e' }, moveHandleStyle: { color: '#cbd5e1' }, emphasis: { handleStyle: { borderColor: '#0f766e' } }, textStyle: { color: '#64748b', fontSize: 10 }, labelFormatter: (value) => formatMonthTick(value) }
+      { type: 'slider', height: 20, bottom: 8, filterMode: 'none', start: zoomStart, end: zoomEnd, borderColor: '#dbe3e8', fillerColor: 'rgba(15, 118, 110, .12)', handleStyle: { color: '#0f766e' }, moveHandleStyle: { color: '#cbd5e1' }, emphasis: { handleStyle: { borderColor: '#0f766e' } }, textStyle: { color: '#64748b', fontSize: 10 }, labelFormatter: (value) => categories[Math.round(value)] ?? '' }
     ],
     series
   };
