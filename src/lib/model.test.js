@@ -133,9 +133,19 @@ describe('renovation: selectedRenovationLoanPlan', () => {
     const plan = selectedRenovationLoanPlan(3000000, 1, 130000, 16.9, 'long', 0);
     expect(plan.months).toBe(360);
   });
-  it('fast mode simulates stepped payments and reports the post-move payment', () => {
-    const plan = selectedRenovationLoanPlan(3000000, 30000, 130000, 16.9, 'fast', 6);
+  it('fast mode rejects when the 30-year annuity does not fit the renovation-phase capacity', () => {
+    expect(selectedRenovationLoanPlan(3000000, 30000, 130000, 16.9, 'fast', 6)).toBeNull();
+  });
+  it('fast mode pays the 30-year annuity during renovation and reports the post-move payment', () => {
+    const plan = selectedRenovationLoanPlan(3000000, 50000, 130000, 16.9, 'fast', 6);
     expect(plan.months).toBe(35);
+    expect(plan.payment).toBe(130000);
+    expect(plan.annuity).toBeCloseTo(42526.79, 1);
+    expect(plan.overpayment).toBeCloseTo(906238.8, -1);
+  });
+  it('fast mode ignores the during-capacity once renovation months are zero', () => {
+    const plan = selectedRenovationLoanPlan(3000000, 1, 130000, 16.9, 'fast', 0);
+    expect(plan.months).toBe(29);
     expect(plan.payment).toBe(130000);
   });
 });
@@ -169,9 +179,29 @@ describe('renovation: calculate «накопить до»', () => {
 
   it('down payment target grows by the indexed renovation cost and the deal shifts later', () => {
     const result = calculate(DEFAULTS, 'fast', reno);
-    expect(result.mortgageAtDownPayment.month).toBe(104);
-    expect(result.mortgageAtDownPayment.moveMonth).toBe(110);
-    expect(result.mortgageAtDownPayment.months).toBe(348);
+    expect(result.mortgageAtDownPayment.month).toBe(159);
+    expect(result.mortgageAtDownPayment.moveMonth).toBe(165);
+    expect(result.mortgageAtDownPayment.months).toBe(39);
+  });
+
+  it('deal waits until the 30-year annuity of the principal fits monthly savings — in both repayment modes', () => {
+    const fast = calculate(DEFAULTS, 'fast', reno);
+    const long = calculate(DEFAULTS, 'long', reno);
+    for (const result of [fast, long]) {
+      const plan = result.mortgageAtDownPayment;
+      expect(plan.month).toBe(159);
+      expect(plan.moveMonth).toBe(165);
+      expect(plan.annuity).toBeLessThanOrEqual(50000 + 0.01);
+      expect(plan.principal).toBeGreaterThan(0);
+    }
+    expect(fast.mortgageAtDownPayment.month).toBe(long.mortgageAtDownPayment.month);
+  });
+
+  it('zero renovation months skip the annuity waiting constraint', () => {
+    const result = calculate(DEFAULTS, 'fast', { needed: true, cost: 1500000, months: 0 });
+    expect(result.mortgageAtDownPayment.month).toBe(97);
+    expect(result.mortgageAtDownPayment.moveMonth).toBe(97);
+    expect(result.mortgageAtDownPayment.months).not.toBeNull();
   });
 
   it('mortgage now: upfront cost = down payment + renovation cost, principal shrinks by the renovation budget', () => {
@@ -192,10 +222,19 @@ describe('renovation: calculate «накопить до»', () => {
     expect(isMortgagePaymentTooLow(withReno)).toBe(true);
   });
 
+  it('an annuity unaffordable during renovation blocks fast mode too — no negative amortization', () => {
+    const inputs = { ...DEFAULTS, savings: 8000000, monthlySavings: 30000, rent: 100000 };
+    const withReno = calculate(inputs, 'fast', { needed: true, cost: 1000000, months: 6 });
+    expect(withReno.months).toBeNull();
+    expect(withReno.hasDownPayment).toBe(true);
+    expect(isMortgagePaymentTooLow(withReno)).toBe(true);
+  });
+
   it('threshold purchase also waits for the renovation budget and reports the move month', () => {
     const result = calculate(DEFAULTS, 'fast', reno);
-    expect(result.thresholdPurchase.month).toBe(105);
-    expect(result.thresholdPurchase.moveMonth).toBe(111);
+    expect(result.thresholdPurchase.month).toBe(159);
+    expect(result.thresholdPurchase.moveMonth).toBe(165);
+    expect(result.thresholdPurchase.annuity).toBeLessThanOrEqual(50000 + 0.01);
   });
 
   it('affordability waits for down payment + renovation and reports the move month', () => {
@@ -339,9 +378,14 @@ describe('buildCashflow', () => {
     }
     expect(sum(data.rows, 'renovation')).toBeCloseTo(300000, 1);
     for (let month = data.dealMonth; month < data.moveMonth; month += 1) {
-      expect(data.rows[month].principal + data.rows[month].interest).toBeCloseTo(100000, 1);
+      expect(data.rows[month].principal).toBeGreaterThan(0);
+      expect(data.rows[month].principal + data.rows[month].interest).toBeCloseTo(28351.19, 1);
+      expect(data.rows[month].savings).toBeCloseTo(71648.81, 1);
       expect(data.rows[month].rent).toBe(0);
     }
+    const afterMove = data.rows[data.moveMonth + 3];
+    expect(afterMove.principal + afterMove.interest).toBeCloseTo(100000, 1);
+    expect(afterMove.savings).toBe(0);
   });
 
   it('«после покупки»: renovation cash lands at the deal, then the surplus finishes it', () => {
