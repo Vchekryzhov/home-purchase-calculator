@@ -3,10 +3,10 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { DEFAULTS, SIMULATION_HORIZON_MONTHS, RENOVATION_COST_SHARE, calculate, isMortgagePaymentTooLow, buildCashflow, rentPaidUntilMonth } from './lib/model.js';
 import * as echarts from 'echarts/core';
 import { BarChart } from 'echarts/charts';
-import { DataZoomComponent, GridComponent, LegendComponent, TooltipComponent } from 'echarts/components';
+import { DataZoomComponent, GridComponent, LegendComponent, MarkLineComponent, TooltipComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 
-echarts.use([BarChart, DataZoomComponent, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer]);
+echarts.use([BarChart, DataZoomComponent, GridComponent, LegendComponent, MarkLineComponent, TooltipComponent, CanvasRenderer]);
 import { addMonths, formatDate, duration } from './lib/format.js';
 
 const inputs = reactive({ ...DEFAULTS });
@@ -80,8 +80,13 @@ const buildCashflowOption = (data) => {
   if (data.dealMonth > 0) marks.push({ xAxis: monthDate(data.dealMonth), label: { formatter: 'Сделка', position: 'insideEndTop', color: '#334155' }, lineStyle: { color: '#334155', type: 'dashed', width: 1.5 } });
   if (data.moveMonth > data.dealMonth) marks.push({ xAxis: monthDate(data.moveMonth), label: { formatter: 'Переезд', position: 'insideEndTop', color: '#334155' }, lineStyle: { color: '#334155', type: 'dashed', width: 1.5 } });
   if (marks.length) series[0].markLine = { symbol: 'none', silent: true, animation: false, data: marks };
-  return {
-    animationDuration: 150,
+    const total = data.rows.length;
+    const windowStart = Math.max(0, data.dealMonth - 12);
+    const windowEnd = Math.min(total, windowStart + 48);
+    const zoomStart = Math.round(windowStart / Math.max(1, total) * 1000) / 10;
+    const zoomEnd = Math.round(windowEnd / Math.max(1, total) * 1000) / 10;
+    return {
+      animationDuration: 150,
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(15, 23, 42, .06)' } },
@@ -100,8 +105,8 @@ const buildCashflowOption = (data) => {
     xAxis: { type: 'time', axisLine: { lineStyle: { color: '#dbe3e8' } }, axisTick: { show: false }, axisLabel: { color: '#64748b', fontSize: 11, formatter: (value) => formatMonthTick(value), hideOverlap: true } },
     yAxis: { type: 'value', axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#64748b', fontSize: 11, formatter: (value) => plainNumber.format(value) }, splitLine: { lineStyle: { color: '#e2e8f0' } } },
     dataZoom: [
-      { type: 'inside', filterMode: 'none' },
-      { type: 'slider', height: 20, bottom: 8, filterMode: 'none', borderColor: '#dbe3e8', fillerColor: 'rgba(15, 118, 110, .12)', handleStyle: { color: '#0f766e' }, moveHandleStyle: { color: '#cbd5e1' }, emphasis: { handleStyle: { borderColor: '#0f766e' } }, textStyle: { color: '#64748b', fontSize: 10 }, labelFormatter: (value) => formatMonthTick(value) }
+      { type: 'inside', filterMode: 'none', start: zoomStart, end: zoomEnd },
+      { type: 'slider', height: 20, bottom: 8, filterMode: 'none', start: zoomStart, end: zoomEnd, borderColor: '#dbe3e8', fillerColor: 'rgba(15, 118, 110, .12)', handleStyle: { color: '#0f766e' }, moveHandleStyle: { color: '#cbd5e1' }, emphasis: { handleStyle: { borderColor: '#0f766e' } }, textStyle: { color: '#64748b', fontSize: 10 }, labelFormatter: (value) => formatMonthTick(value) }
     ],
     series
   };
