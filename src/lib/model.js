@@ -1,5 +1,3 @@
-import { yearsLabel, duration } from './format.js';
-
 export const DEFAULTS = { savings: 0, monthlySavings: 50000, mortgageRate: 16.9, propertyPrice: 10000000, downPaymentPercent: 20, inflation: 5, rent: 80000, depositRate: 11.5 };
 export const SIMULATION_HORIZON_MONTHS = 720;
 export const AFFORDABILITY_HORIZON_MONTHS = 360;
@@ -263,38 +261,3 @@ export const buildCashflow = (rawInputs, repaymentMode, renovation = NO_RENOVATI
 };
 
 export const isMortgagePaymentTooLow = (result) => result.hasDownPayment ? result.months === null : result.firstMortgagePaymentTooLow;
-
-export const buildJourney = (rawInputs, mortgageAffordable, mortgageAtDownPayment) => {
-  const number = (key) => Math.max(0, Number(rawInputs[key]) || 0);
-  const savings = number('savings'), monthlySavings = number('monthlySavings'), propertyPrice = number('propertyPrice'), downPaymentPercent = number('downPaymentPercent'), inflation = number('inflation'), depositRate = number('depositRate');
-  const markerMonth = mortgageAffordable?.month ?? null;
-  const referenceMonth = markerMonth ?? mortgageAtDownPayment?.month ?? 360;
-  const horizon = Math.max(60, Math.min(360, Math.ceil(referenceMonth / 12) * 12));
-  const growth = 1 + inflation / 100;
-  let balance = savings;
-  const values = [];
-  for (let month = 0; month <= horizon; month += 1) {
-    values.push({ month, balance, required: propertyPrice * Math.pow(growth, month / 12) * downPaymentPercent / 100 });
-    balance = balance * (1 + depositRate / 100 / 12) + monthlySavings;
-  }
-  const maximum = Math.max(1, ...values.flatMap(({ balance: amount, required }) => [amount, required]));
-  const x = (month) => 64 + month / horizon * 608;
-  const y = (value) => 34 + (1 - value / maximum) * 166;
-  const path = (key) => values.map(({ month, [key]: value }, index) => `${index ? 'L' : 'M'}${x(month).toFixed(1)},${y(value).toFixed(1)}`).join(' ');
-  const area = (key) => `M${x(values[0].month).toFixed(1)},200 ${values.map(({ month, [key]: value }) => `L${x(month).toFixed(1)},${y(value).toFixed(1)}`).join(' ')} L${x(values.at(-1).month).toFixed(1)},200 Z`;
-  const firstCoveredIndex = values.findIndex(({ balance: amount, required }) => amount >= required);
-  const shortage = values.slice(0, (firstCoveredIndex === -1 ? values.length - 1 : firstCoveredIndex) + 1);
-  const shortageArea = shortage.length > 1 ? `M${shortage.map(({ month, required }) => `${x(month).toFixed(1)},${y(required).toFixed(1)}`).join(' L')} L${[...shortage].reverse().map(({ month, balance: amount }) => `${x(month).toFixed(1)},${y(amount).toFixed(1)}`).join(' L')} Z` : null;
-  return {
-    savingsPath: path('balance'),
-    requiredPath: path('required'),
-    savingsArea: area('balance'),
-    shortageArea,
-    markerX: markerMonth === null ? null : x(markerMonth),
-    maximum,
-    middleX: x(horizon / 2),
-    middleLabel: yearsLabel(Math.round(horizon / 24)),
-    endLabel: yearsLabel(Math.round(horizon / 12)),
-    markerLabel: markerMonth === null ? null : duration(markerMonth)
-  };
-};
