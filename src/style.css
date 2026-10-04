@@ -35,6 +35,7 @@ dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 
 .chart-frame { fill: #f8fafc; stroke: #dbe3e8; }
 .chart-grid { stroke: #e2e8f0; }
 .chart-marker { stroke: #334155; stroke-width: 1.5; stroke-dasharray: 5 5; }
+.chart-marker-group { cursor: help; }.chart-marker-hit { fill: transparent; }
 .chart-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 14px; font-size: 13px; color: #475569; }.chart-legend span { display: inline-flex; align-items: center; gap: 7px; }.chart-legend i { width: 14px; height: 14px; border-radius: 4px; }
 .cashflow-chart { margin-top: 18px; position: relative; }
 .cashflow-chart svg { display: block; width: 100%; height: auto; margin-top: 6px; }
