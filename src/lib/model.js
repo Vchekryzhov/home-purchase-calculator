@@ -201,9 +201,8 @@ export const buildCashflow = (rawInputs, repaymentMode, renovation = NO_RENOVATI
   const plan = calculate(rawInputs, repaymentMode, renovation).mortgageAtDownPayment;
   if (!plan || plan.months === null) return null;
   const number = (key) => Math.max(0, Number(rawInputs[key]) || 0);
-  const monthlySavings = number('monthlySavings'), inflation = number('inflation'), rent = number('rent'), mortgageRate = number('mortgageRate');
+  const monthlySavings = number('monthlySavings'), rent = number('rent'), mortgageRate = number('mortgageRate'), inflation = number('inflation');
   const propertyGrowth = 1 + inflation / 100;
-  const rentAtMonth = (month) => rent * Math.pow(propertyGrowth, month / 12);
   const renoActive = Boolean(renovation?.needed);
   const renoMonths = renoActive ? Math.max(0, Math.round(Number(renovation.months) || 0)) : 0;
   const fundingAfter = renoActive && renovation.funding === 'after';
@@ -240,9 +239,9 @@ export const buildCashflow = (rawInputs, repaymentMode, renovation = NO_RENOVATI
     if (month < dealMonth) {
       row.savings = Math.max(0, monthlySavings - accumulationReno);
       row.renovation = Math.min(accumulationReno, monthlySavings);
-      row.rent = rentAtMonth(month);
+      row.rent = rent;
     } else if (month < moveMonth) {
-      row.rent = rentAtMonth(month);
+      row.rent = rent;
       if (fundingAfter) {
         row.renovation = Math.min(Math.max(0, monthlySavings - paymentActual), Math.max(0, renoCostDeal - renoPaid));
         renoPaid += row.renovation;
@@ -251,7 +250,8 @@ export const buildCashflow = (rawInputs, repaymentMode, renovation = NO_RENOVATI
       }
       row.savings = Math.max(0, monthlySavings - paymentActual - row.renovation);
     } else {
-      row.savings = Math.max(0, monthlySavings + rent - paymentActual);
+      row.interest = interestPaid;
+      row.principal = principalPaid;
     }
     rows.push(row);
   }

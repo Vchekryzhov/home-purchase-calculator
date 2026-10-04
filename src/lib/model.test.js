@@ -304,18 +304,24 @@ describe('buildCashflow', () => {
     expect(loanRow.principal + loanRow.interest).toBeCloseTo(50000, 1);
   });
 
-  it('keeps every month total at savings-plus-rent (rent converts into the mortgage payment)', () => {
+  it('monthly totals never exceed savings-plus-rent and drop the savings stack after move-in', () => {
     for (const [name, renovation] of [
       ['no-renovation', NO_RENOVATION],
       ['before', { needed: true, cost: 1500000, months: 6, funding: 'before' }],
       ['after', { needed: true, cost: 1500000, months: 6, funding: 'after' }],
     ]) {
       const data = buildCashflow(DEFAULTS, 'fast', renovation);
-      const rentAt = (month) => 80000 * Math.pow(1.05, month / 12);
+      const envelope = 50000 + 80000;
       for (const row of data.rows) {
-        const expected = 50000 + (row.month < data.moveMonth ? rentAt(row.month) : 80000);
-        expect(total(row)).toBeCloseTo(expected, 0);
+        if (row.month < data.moveMonth) {
+          expect(total(row)).toBeCloseTo(envelope, 0);
+          expect(row.rent).toBe(80000);
+        } else {
+          expect(total(row)).toBeLessThanOrEqual(envelope + 1);
+          expect(row.savings).toBe(0);
+        }
       }
+      expect(data.maximum).toBeLessThanOrEqual(envelope + 1);
       expect(data.rows.length).toBeGreaterThan(0);
     }
   });
