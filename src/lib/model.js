@@ -57,15 +57,16 @@ export const loanPlanStepped = (principal, paymentDuring, paymentAfter, annualRa
 };
 
 export const selectedRenovationLoanPlan = (principal, capacityDuring, capacityAfter, annualRate, repaymentMode, renovationMonths) => {
+  const annuity = paymentForTerm(principal, annualRate);
+  if (renovationMonths > 0 && annuity > capacityDuring + 0.01) return null;
   if (repaymentMode === 'fast') {
-    const plan = loanPlanStepped(principal, capacityDuring, capacityAfter, annualRate, renovationMonths);
-    return plan && { ...plan, payment: capacityAfter };
+    const paymentDuring = renovationMonths > 0 ? annuity : capacityDuring;
+    const plan = loanPlanStepped(principal, paymentDuring, capacityAfter, annualRate, renovationMonths);
+    return plan && { ...plan, payment: capacityAfter, annuity };
   }
-  const payment = paymentForTerm(principal, annualRate);
-  const weakestCapacity = renovationMonths > 0 ? Math.min(capacityDuring, capacityAfter) : capacityAfter;
-  if (payment > weakestCapacity + 0.01) return null;
-  const plan = loanPlan(principal, payment, annualRate);
-  return plan && { ...plan, payment };
+  if (annuity > capacityAfter + 0.01) return null;
+  const plan = loanPlan(principal, annuity, annualRate);
+  return plan && { ...plan, payment: annuity, annuity };
 };
 
 export const loanScheduleStepped = (principal, paymentDuring, paymentAfter, annualRate, switchMonth, maxMonths) => {
@@ -240,7 +241,7 @@ export const buildCashflow = (rawInputs, repaymentMode, renovation = NO_RENOVATI
       const capacityAfter = repaymentMode === 'fast' ? monthlySavings + rent : annuity;
       schedule = loanScheduleStepped(plan.principal, annuity, capacityAfter, mortgageRate, plan.lag ?? lag, plan.months + (plan.lag ?? lag) + 1);
     } else {
-      const during = repaymentMode === 'fast' ? monthlySavings : plan.payment;
+      const during = plan.annuity ?? monthlySavings;
       const capacityAfter = repaymentMode === 'fast' ? monthlySavings + rent : plan.payment;
       schedule = loanScheduleStepped(plan.principal, during, capacityAfter, mortgageRate, lag, plan.months + lag + 1);
     }
