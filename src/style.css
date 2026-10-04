@@ -43,5 +43,7 @@ dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 
 .chart-marker { stroke: #334155; stroke-width: 1.5; stroke-dasharray: 5 5; }
 .journey-chart text { fill: #64748b; font-size: 12px; font-weight: 500; }
 .chart-note { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; font-size: 13px; color: #334155; }.chart-note span { width: 9px; height: 9px; border-radius: 50%; background: #0f766e; flex: none; }.chart-note.muted { color: #64748b; }
+.cashflow-chart { margin-top: 18px; }.cashflow-chart svg g rect { shape-rendering: crispEdges; }
+.cf-principal { fill: #0f766e; }.cf-interest { fill: #fb7185; }.cf-renovation { fill: #f59e0b; }.cf-savings { fill: #14b8a6; }.cf-rent { fill: #94a3b8; }
 @media (max-width: 900px) { .layout { grid-template-columns: 1fr; }.inputs { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 620px) { main { padding: 22px 16px 32px; } header { align-items: start; flex-direction: column; margin-bottom: 20px; }.inputs, .cards, .bottom, .year { grid-template-columns: 1fr; }.panel, .card { padding: 20px; border-radius: 20px; } }
