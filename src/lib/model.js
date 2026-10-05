@@ -2,23 +2,10 @@ export const DEFAULTS = { savings: 0, monthlySavings: 50000, mortgageRate: 16.9,
 export const SIMULATION_HORIZON_MONTHS = 720;
 export const AFFORDABILITY_HORIZON_MONTHS = 360;
 export const MAX_LOAN_MONTHS = 360;
+export const NO_RENOVATION = { needed: false, cost: 0, months: 0 };
+export const RENOVATION_COST_SHARE = 0.15;
 
-export const loanPlan = (principal, payment, annualRate, maxMonths = MAX_LOAN_MONTHS) => {
-  if (principal <= 0) return { months: 0, overpayment: 0, firstMonthInterest: 0 };
-  if (payment <= 0) return null;
-  const rate = annualRate / 100 / 12;
-  const firstMonthInterest = principal * rate;
-  if (rate && payment <= firstMonthInterest) return null;
-  let balance = principal, totalPaid = 0;
-  for (let month = 1; month <= maxMonths; month += 1) {
-    const due = balance * (1 + rate);
-    const actualPayment = Math.min(payment, due);
-    balance = due - actualPayment;
-    totalPaid += actualPayment;
-    if (balance < 0.01) return { months: month, overpayment: Math.max(0, totalPaid - principal), firstMonthInterest };
-  }
-  return null;
-};
+const number = (value) => Math.max(0, Number(value) || 0);
 
 export const paymentForTerm = (principal, annualRate, months = MAX_LOAN_MONTHS) => {
   if (principal <= 0) return 0;
@@ -26,272 +13,201 @@ export const paymentForTerm = (principal, annualRate, months = MAX_LOAN_MONTHS) 
   return rate ? principal * rate / (1 - Math.pow(1 + rate, -months)) : principal / months;
 };
 
-export const selectedLoanPlan = (principal, maxPayment, annualRate, repaymentMode) => {
-  if (repaymentMode === 'fast') {
-    const plan = loanPlan(principal, maxPayment, annualRate);
-    return plan && { ...plan, payment: maxPayment };
-  }
-  const payment = paymentForTerm(principal, annualRate);
-  if (payment > maxPayment + 0.01) return null;
-  const plan = loanPlan(principal, payment, annualRate);
-  return plan && { ...plan, payment };
-};
-
-export const NO_RENOVATION = { needed: false, cost: 0, months: 0 };
-export const RENOVATION_COST_SHARE = 0.15;
-
-export const loanPlanStepped = (principal, paymentDuring, paymentAfter, annualRate, renovationMonths, maxMonths = MAX_LOAN_MONTHS) => {
-  if (principal <= 0) return { months: 0, overpayment: 0, firstMonthInterest: 0 };
-  if (paymentDuring <= 0 && paymentAfter <= 0) return null;
-  const rate = annualRate / 100 / 12;
-  const firstMonthInterest = principal * rate;
-  let balance = principal, totalPaid = 0;
-  for (let month = 1; month <= maxMonths; month += 1) {
-    const due = balance * (1 + rate);
-    const actualPayment = Math.min(month <= renovationMonths ? paymentDuring : paymentAfter, due);
-    balance = due - actualPayment;
-    totalPaid += actualPayment;
-    if (balance < 0.01) return { months: month, overpayment: Math.max(0, totalPaid - principal), firstMonthInterest };
-  }
-  return null;
-};
-
-export const selectedRenovationLoanPlan = (principal, capacityDuring, capacityAfter, annualRate, repaymentMode, renovationMonths) => {
-  const annuity = paymentForTerm(principal, annualRate);
-  if (renovationMonths > 0 && annuity > capacityDuring + 0.01) return null;
-  if (repaymentMode === 'fast') {
-    const paymentDuring = renovationMonths > 0 ? annuity : capacityDuring;
-    const plan = loanPlanStepped(principal, paymentDuring, capacityAfter, annualRate, renovationMonths);
-    return plan && { ...plan, payment: capacityAfter, annuity };
-  }
-  if (annuity > capacityAfter + 0.01) return null;
-  const plan = loanPlan(principal, annuity, annualRate);
-  return plan && { ...plan, payment: annuity, annuity };
-};
-
-export const loanScheduleStepped = (principal, paymentDuring, paymentAfter, annualRate, switchMonth, maxMonths) => {
-  if (principal <= 0) return [];
-  const rate = annualRate / 100 / 12;
-  let balance = principal;
-  const rows = [];
-  for (let month = 1; month <= maxMonths && balance >= 0.01; month += 1) {
-    const interest = balance * rate;
-    const payment = Math.min(month <= switchMonth ? paymentDuring : paymentAfter, balance + interest);
-    const principalPart = payment - interest;
-    balance -= principalPart;
-    rows.push({ interest, principal: principalPart });
-  }
-  return rows;
-};
-
-export const allocateAfterPurchase = (price, balance, capacityDuring, annualRate, downPaymentPercent, renovationCost, renovationMonths) => {
-  const rate = annualRate / 100 / 12;
-  const perRouble = rate ? rate / (1 - Math.pow(1 + rate, -MAX_LOAN_MONTHS)) : 1 / MAX_LOAN_MONTHS;
-  const principalMax = capacityDuring / perRouble;
-  const downMin = Math.max(price * downPaymentPercent / 100, price - principalMax, price - balance);
-  if (balance < downMin - 0.01) return null;
-  const evaluate = (down) => {
-    const principal = Math.max(0, price - down);
-    const annuity = principal * perRouble;
-    const surplus = capacityDuring - annuity;
-    const renoCash = Math.min(renovationCost, Math.max(0, balance - down));
-    const remaining = Math.max(0, renovationCost - renoCash);
-    if (remaining <= 0) return { down, principal, annuity, surplus, renoCash, lag: Math.max(0, renovationMonths) };
-    if (surplus <= 0) return null;
-    return { down, principal, annuity, surplus, renoCash, lag: Math.max(renovationMonths, Math.ceil(remaining / surplus)) };
-  };
-  const options = [evaluate(downMin), evaluate(balance)].filter(Boolean);
-  if (!options.length) return null;
-  return options.reduce((best, option) => option.lag < best.lag ? option : best);
-};
-
 export const rentPaidUntilMonth = (rawInputs, month) => {
-  const number = (key) => Math.max(0, Number(rawInputs[key]) || 0);
-  const rent = number('rent'), inflation = number('inflation');
-  const rentGrowth = 1 + inflation / 100;
-  let rentPaid = 0;
-  for (let m = 0; m < Math.max(0, Math.ceil(month)); m += 1) rentPaid += rent * Math.pow(rentGrowth, m / 12);
-  return rentPaid;
+  const rent = number(rawInputs.rent), growth = 1 + number(rawInputs.inflation) / 100;
+  let total = 0;
+  for (let m = 0; m < Math.max(0, Math.ceil(month)); m += 1) total += rent * Math.pow(growth, m / 12);
+  return total;
 };
 
-export const calculate = (rawInputs, repaymentMode, renovation = NO_RENOVATION) => {
-  const number = (key) => Math.max(0, Number(rawInputs[key]) || 0);
-  const savings = number('savings'), monthlySavings = number('monthlySavings'), propertyPrice = number('propertyPrice'), downPaymentPercent = number('downPaymentPercent'), inflation = number('inflation'), rent = number('rent'), depositRate = number('depositRate');
-  const mortgageRate = number('mortgageRate');
-  const propertyGrowth = 1 + inflation / 100, rentGrowth = 1 + inflation / 100;
-  const payment = monthlySavings + rent;
-  const rentAtMonth = (month) => rent * Math.pow(rentGrowth, month / 12);
-  const savingsContribution = () => monthlySavings;
-  const renoActive = Boolean(renovation?.needed);
-  const renoMonths = renoActive ? Math.max(0, Math.round(Number(renovation.months) || 0)) : 0;
-  const renoAfterPurchase = renoActive && renovation.funding === 'after';
-  const renoCostAt = (month) => renoActive ? Math.max(0, Number(renovation.cost) || 0) * Math.pow(propertyGrowth, month / 12) : 0;
-  const renoTarget = (month) => renoAfterPurchase ? 0 : renoCostAt(month);
-  const renoLagAfter = (surplus, month) => {
-    if (renoMonths <= 0 || renoCostAt(month) <= 0) return renoMonths;
-    if (surplus <= 0) return SIMULATION_HORIZON_MONTHS;
-    return Math.max(renoMonths, Math.ceil(renoCostAt(month) / surplus));
-  };
-  const renoLag = (surplus, month) => renoAfterPurchase ? renoLagAfter(surplus, month) : renoMonths;
-  const priceAt = (month) => propertyPrice * Math.pow(propertyGrowth, month / 12);
-  const pickPlan = (month, simBalance) => {
-    const price = priceAt(month);
-    if (!renoActive) return selectedLoanPlan(Math.max(0, price - simBalance), payment, mortgageRate, repaymentMode);
-    if (!renoAfterPurchase) return selectedRenovationLoanPlan(Math.max(0, price - (simBalance - renoCostAt(month))), monthlySavings, payment, mortgageRate, repaymentMode, renoMonths);
-    const allocation = allocateAfterPurchase(price, simBalance, monthlySavings, mortgageRate, downPaymentPercent, renoCostAt(month), renoMonths);
-    if (!allocation || allocation.lag > SIMULATION_HORIZON_MONTHS - month) return null;
-    const capacityAfter = repaymentMode === 'fast' ? payment : allocation.annuity;
-    const plan = loanPlanStepped(allocation.principal, allocation.annuity, capacityAfter, mortgageRate, allocation.lag);
-    return plan && { ...plan, principal: allocation.principal, payment: capacityAfter, lag: allocation.lag, renoCash: allocation.renoCash, annuity: allocation.annuity, surplus: allocation.surplus };
-  };
-  const withReno = (object, month, lag = renoMonths) => renoActive ? { ...object, moveMonth: month + lag, renovationCost: renoCostAt(month) } : object;
-  let balance = savings, rentPaid = 0, cashPurchase = null;
-  for (let month = 0; month <= SIMULATION_HORIZON_MONTHS; month += 1) {
-    const price = propertyPrice * Math.pow(propertyGrowth, month / 12);
-    if (balance >= price + renoTarget(month)) {
-      const lag = renoLag(monthlySavings, month);
-      for (let k = month; k < month + lag; k += 1) rentPaid += rentAtMonth(k);
-      cashPurchase = withReno({ month, price, balance, rentPaid }, month, lag);
-      break;
-    }
-    rentPaid += rentAtMonth(month);
-    balance = balance * (1 + depositRate / 100 / 12) + savingsContribution(month);
+// The term's last opportunity clears only the annuity formula's floating-point residual.
+const paymentDue = (balance, interest, annuity, term) => term >= MAX_LOAN_MONTHS - 1 ? balance + interest : Math.min(annuity, balance + interest);
+
+const mandatoryPayments = (principal, annuity, rate) => {
+  const payments = [];
+  let balance = principal;
+  for (let t = 0; t < MAX_LOAN_MONTHS && balance > 0; t += 1) {
+    const interest = balance * rate;
+    const payment = paymentDue(balance, interest, annuity, t);
+    payments.push(payment);
+    balance = Math.max(0, balance - (payment - interest));
   }
-  const requiredDownPayment = propertyPrice * downPaymentPercent / 100;
-  const upfrontCost = requiredDownPayment + renoTarget(0);
-  const hasDownPayment = savings >= upfrontCost;
-  const principal = hasDownPayment ? (pickPlan(0, savings)?.principal ?? Math.max(0, propertyPrice - (savings - renoTarget(0)))) : Math.max(0, propertyPrice - (savings - renoTarget(0)));
-  const currentPlan = hasDownPayment ? pickPlan(0, savings) : null;
-  const months = currentPlan?.months ?? null;
-  const currentLag = currentPlan?.lag ?? renoLag(monthlySavings, 0);
-  let downPaymentBalance = savings, mortgageAtDownPayment = null;
-  for (let month = 0; month <= SIMULATION_HORIZON_MONTHS; month += 1) {
-    const price = propertyPrice * Math.pow(propertyGrowth, month / 12);
-    const required = price * downPaymentPercent / 100;
-    const renoCost = renoCostAt(month);
-    if (downPaymentBalance >= required + renoTarget(month)) {
-      const futurePlan = pickPlan(month, downPaymentBalance);
-      const futurePrincipal = futurePlan?.principal ?? Math.max(0, price - (downPaymentBalance - renoTarget(month)));
-      const lag = futurePlan?.lag ?? renoLag(monthlySavings, month);
-      mortgageAtDownPayment = withReno({ month, price, balance: downPaymentBalance, principal: futurePrincipal, payment: futurePlan?.payment ?? payment, months: futurePlan?.months ?? null, overpayment: futurePlan?.overpayment ?? null, renoCash: futurePlan?.renoCash, annuity: futurePlan?.annuity }, month, lag);
-      break;
-    }
-    downPaymentBalance = downPaymentBalance * (1 + depositRate / 100 / 12) + savingsContribution(month);
+  return payments;
+};
+
+const expenses = (context, dealMonth, workMonths, installment, principal, annuity, start = dealMonth) => {
+  const payments = mandatoryPayments(principal, annuity, context.rate);
+  const end = Math.max(start + payments.length, dealMonth + workMonths, dealMonth + 1);
+  const base = [], full = [];
+  for (let month = start; month < end; month += 1) {
+    const rent = month < dealMonth + workMonths ? context.rents[month] : 0;
+    const baseExpense = rent + (payments[month - start] ?? 0);
+    base.push(baseExpense);
+    full.push(baseExpense + (month >= dealMonth && month < dealMonth + workMonths ? installment : 0));
   }
-  let affordableBalance = savings, mortgageAffordable = null, affordableBestMove = Infinity;
-  for (let month = 0; month <= AFFORDABILITY_HORIZON_MONTHS; month += 1) {
-    const price = propertyPrice * Math.pow(propertyGrowth, month / 12);
-    const required = price * downPaymentPercent / 100;
-    const futurePlan = pickPlan(month, affordableBalance);
-    if (affordableBalance >= required + renoTarget(month) && futurePlan !== null) {
-      const move = month + (futurePlan.lag ?? 0);
-      if (move < affordableBestMove) {
-        affordableBestMove = move;
-        const futurePrincipal = futurePlan.principal ?? Math.max(0, price - (affordableBalance - renoTarget(month)));
-        mortgageAffordable = withReno({ month, principal: futurePrincipal, payment: futurePlan.payment, months: futurePlan.months, overpayment: futurePlan.overpayment, renoCash: futurePlan.renoCash, annuity: futurePlan.annuity }, month, futurePlan.lag);
-      }
-      if (!renoAfterPurchase) break;
-    }
-    affordableBalance = affordableBalance * (1 + depositRate / 100 / 12) + savingsContribution(month);
+  return { base, full };
+};
+
+const prefixReserve = (schedule, budget, q) => {
+  let prefix = 0, reserve = 0, discount = 1;
+  for (const expense of schedule) {
+    discount /= q;
+    prefix += (expense - budget) * discount;
+    reserve = Math.max(reserve, prefix);
   }
-  let thresholdBalance = savings, thresholdPurchase = null, thresholdBestMove = Infinity;
-  for (let month = 0; month <= SIMULATION_HORIZON_MONTHS; month += 1) {
-    const price = propertyPrice * Math.pow(propertyGrowth, month / 12);
-    const futureDownPayment = price * downPaymentPercent / 100;
-    const futurePlan = pickPlan(month, thresholdBalance);
-    const firstMonthInterest = futurePlan?.firstMonthInterest ?? null;
-    if (thresholdBalance >= futureDownPayment + renoTarget(month) && futurePlan !== null && firstMonthInterest < rentAtMonth(month)) {
-      const move = month + (futurePlan.lag ?? 0);
-      if (move < thresholdBestMove) {
-        thresholdBestMove = move;
-        thresholdPurchase = withReno({ month, price, balance: thresholdBalance, rent: rentAtMonth(month), firstMonthInterest, principal: futurePlan.principal ?? Math.max(0, price - (thresholdBalance - renoTarget(month))), payment: futurePlan.payment, months: futurePlan.months, overpayment: futurePlan.overpayment, renoCash: futurePlan.renoCash, annuity: futurePlan.annuity }, month, futurePlan.lag);
-      }
-      if (!renoAfterPurchase) break;
-    }
-    thresholdBalance = thresholdBalance * (1 + depositRate / 100 / 12) + savingsContribution(month);
-  }
-  const firstMortgagePaymentTooLow = Boolean(mortgageAtDownPayment && mortgageAtDownPayment.months === null);
+  return reserve;
+};
+
+const backwardReserve = (schedule, budget, q) => {
+  let reserve = 0;
+  for (let t = schedule.length - 1; t >= 0; t -= 1) reserve = Math.max(0, (schedule[t] - budget + reserve) / q);
+  return reserve;
+};
+
+const candidate = (context, month, cashPurchase) => {
+  const { inputs, workMonths, renovationCost, budget, growth, waiting, rents } = context;
+  const index = Math.pow(growth, month / 12), price = inputs.propertyPrice * index;
+  const minimumDownPayment = price * inputs.downPaymentPercent / 100;
+  const down = cashPurchase ? price : Math.max(minimumDownPayment, price - budget / paymentForTerm(1, inputs.mortgageRate), 0);
+  if (down > price) return null;
+  const principal = price - down, annuity = paymentForTerm(principal, inputs.mortgageRate);
+  const cost = renovationCost * index, installment = workMonths ? cost / workMonths : 0;
+  const schedule = expenses(context, month, workMonths, installment, principal, annuity);
+  const totalReserve = prefixReserve(schedule.full, budget, context.q);
+  const deficitReserve = prefixReserve(schedule.base, budget, context.q);
+  const totalRequiredSavings = down + totalReserve;
+  if (waiting[month] < totalRequiredSavings) return null;
   return {
-    principal, payment: currentPlan?.payment ?? payment, maxPayment: payment, months, requiredDownPayment, hasDownPayment, missingDownPayment: Math.max(0, upfrontCost - savings), overpayment: currentPlan?.overpayment ?? null,
-    mortgageAtDownPayment: firstMortgagePaymentTooLow && mortgageAffordable ? mortgageAffordable : mortgageAtDownPayment,
-    firstMortgagePaymentTooLow, mortgageAffordable, cashPurchase, thresholdPurchase, propertyInYear: propertyPrice * propertyGrowth, rentInYear: rent * rentGrowth,
-    ...(renoActive ? { moveMonth: currentLag, renovationCost: renoCostAt(0), upfrontCost } : {})
+    kind: principal > 0 ? 'mortgage' : 'cash', dealMonth: month, moveMonth: month + workMonths, workMonths,
+    propertyPriceAtDeal: price, renovationCostAtDeal: cost, renovationMonthlyPayment: installment,
+    availableSavingsAtDeal: waiting[month], indexedRentAtDeal: rents[month],
+    savingsGoal: {
+      minimumDownPayment, actualDownPayment: principal > 0 ? down : 0, cashPurchasePrice: principal > 0 ? 0 : price,
+      renovationSavings: totalReserve - deficitReserve, deficitReserve, totalReserve, totalRequiredSavings,
+      optionalSurplus: waiting[month] - totalRequiredSavings
+    },
+    loan: principal > 0 ? { principal, contractualAnnuity: annuity, firstMonthInterest: principal * context.rate } : null
   };
 };
 
-export const buildCashflow = (rawInputs, repaymentMode, renovation = NO_RENOVATION) => {
-  const plan = calculate(rawInputs, repaymentMode, renovation).mortgageAtDownPayment;
-  if (!plan || plan.months === null) return null;
-  const number = (key) => Math.max(0, Number(rawInputs[key]) || 0);
-  const monthlySavings = number('monthlySavings'), rent = number('rent'), mortgageRate = number('mortgageRate'), inflation = number('inflation');
-  const propertyGrowth = 1 + inflation / 100;
-  const renoActive = Boolean(renovation?.needed);
-  const renoMonths = renoActive ? Math.max(0, Math.round(Number(renovation.months) || 0)) : 0;
-  const fundingAfter = renoActive && renovation.funding === 'after';
-  const renoCostAt = (month) => renoActive ? Math.max(0, Number(renovation.cost) || 0) * Math.pow(propertyGrowth, month / 12) : 0;
-  const dealMonth = plan.month;
-  const moveMonth = plan.moveMonth ?? dealMonth;
-  const lag = moveMonth - dealMonth;
-  const renoCostDeal = renoCostAt(dealMonth);
-  let schedule = [];
-  if (plan.principal > 0) {
-    if (!renoActive) schedule = loanScheduleStepped(plan.principal, plan.payment, plan.payment, mortgageRate, 0, plan.months + 1);
-    else if (fundingAfter) {
-      const annuity = plan.annuity ?? plan.payment;
-      const capacityAfter = repaymentMode === 'fast' ? monthlySavings + rent : annuity;
-      schedule = loanScheduleStepped(plan.principal, annuity, capacityAfter, mortgageRate, plan.lag ?? lag, plan.months + (plan.lag ?? lag) + 1);
-    } else {
-      const during = plan.annuity ?? monthlySavings;
-      const capacityAfter = repaymentMode === 'fast' ? monthlySavings + rent : plan.payment;
-      schedule = loanScheduleStepped(plan.principal, during, capacityAfter, mortgageRate, lag, plan.months + lag + 1);
-    }
-  }
-  const renoCash = fundingAfter ? (plan.renoCash ?? 0) : 0;
-  const accumulationReno = renoActive && dealMonth > 0 ? (fundingAfter ? renoCash : renoCostDeal) / dealMonth : 0;
-  const dealRenoLump = renoActive && dealMonth === 0 ? (fundingAfter ? renoCash : renoCostDeal) : 0;
-  let renoPaid = 0;
-  const rows = [];
-  const totalMonths = Math.min(SIMULATION_HORIZON_MONTHS, dealMonth + Math.max(plan.months, lag, 1));
-  for (let month = 0; month < totalMonths; month += 1) {
-    const entry = month >= dealMonth ? schedule[month - dealMonth] : null;
-    const principalPaid = Math.max(0, entry?.principal ?? 0);
-    const paymentActual = entry ? entry.interest + entry.principal : 0;
-    const interestPaid = Math.max(0, paymentActual - principalPaid);
-    const row = { month, savings: 0, rent: 0, renovation: 0, interest: interestPaid, principal: principalPaid };
-    if (month < dealMonth) {
-      row.savings = Math.max(0, monthlySavings - accumulationReno);
-      row.renovation = Math.min(accumulationReno, monthlySavings);
-      row.rent = rent;
-    } else if (month < moveMonth) {
-      row.rent = rent;
-      let monthlyReno = 0;
-      if (fundingAfter) {
-        monthlyReno = Math.min(Math.max(0, monthlySavings - paymentActual), Math.max(0, renoCostDeal - renoCash - renoPaid));
-        renoPaid += monthlyReno;
-      }
-      if (dealRenoLump > 0 && month === dealMonth) row.renovation += dealRenoLump;
-      row.renovation += monthlyReno;
-      row.savings = Math.max(0, monthlySavings - paymentActual - monthlyReno);
-    } else {
-      row.interest = interestPaid;
-      row.principal = principalPaid;
-    }
-    rows.push(row);
-  }
-  if (!rows.length) return null;
-  const maximum = Math.max(1, ...rows.map(({ savings, rent: rentPart, renovation, interest, principal }) => savings + rentPart + renovation + interest + principal));
-  return { rows, dealMonth, moveMonth, maximum };
+const protectionAfter = (context, plan, month, principal) => {
+  const remaining = expenses(context, plan.dealMonth, plan.workMonths, plan.renovationMonthlyPayment, principal, plan.loan?.contractualAnnuity ?? 0, month + 1);
+  return backwardReserve(remaining.full, context.budget, context.q);
 };
 
-export const isMortgagePaymentTooLow = (result) => result.hasDownPayment ? result.months === null : result.firstMortgagePaymentTooLow;
+const fillLedger = (context, plan, fast) => {
+  const { dealMonth, moveMonth } = plan;
+  const annuity = plan.loan?.contractualAnnuity ?? 0;
+  const mandatoryLength = plan.loan ? mandatoryPayments(plan.loan.principal, annuity, context.rate).length : 0;
+  const hardEnd = Math.max(dealMonth + Math.max(0, mandatoryLength - 1), moveMonth - 1, dealMonth);
+  const lastStop = Math.max(dealMonth, moveMonth - 1);
+  let cash = context.inputs.savings, balance = 0;
+  const ledger = [];
+  for (let month = 0; month <= hardEnd; month += 1) {
+    if (month === dealMonth) balance = plan.loan?.principal ?? 0;
+    const openingCash = cash, openingLoanPrincipal = balance;
+    const purchaseCapital = month === dealMonth ? plan.savingsGoal.actualDownPayment + plan.savingsGoal.cashPurchasePrice : 0;
+    const cashAfterDeal = openingCash - purchaseCapital;
+    const depositYield = (context.q - 1) * cashAfterDeal;
+    const budgetIncome = context.budget;
+    const rent = month < moveMonth ? context.rents[month] : 0;
+    const renovation = month >= dealMonth && month < moveMonth ? plan.renovationMonthlyPayment : 0;
+    const interest = balance * context.rate;
+    const term = month - dealMonth;
+    const contractualPayment = balance > 0 && term >= 0
+      ? paymentDue(balance, interest, annuity, term)
+      : 0;
+    balance = Math.max(0, balance - (contractualPayment - interest));
+    cash = cashAfterDeal + depositYield + budgetIncome - rent - contractualPayment - renovation;
+    let earlyRepayment = 0;
+    let protectedReserveAfter = month >= dealMonth ? protectionAfter(context, plan, month, balance) : 0;
+    if (fast && balance > 0) {
+      for (;;) {
+        const repay = Math.min(Math.max(0, cash - protectedReserveAfter), balance);
+        if (repay <= 0.01) break;
+        earlyRepayment += repay;
+        balance -= repay;
+        cash -= repay;
+        protectedReserveAfter = protectionAfter(context, plan, month, balance);
+      }
+    }
+    const principal = contractualPayment - interest + earlyRepayment;
+    const renovationFromIncome = Math.min(renovation, Math.max(0, budgetIncome - rent - contractualPayment));
+    const savings = Math.max(0, budgetIncome - rent - renovation - interest - principal);
+    ledger.push({
+      month, openingCash, purchaseCapital, cashAfterDeal, depositYield, budgetIncome, rent, renovation,
+      openingLoanPrincipal, contractualPayment, earlyRepayment, interest, principal, closingLoanPrincipal: balance,
+      renovationFromIncome, renovationFromCash: renovation - renovationFromIncome,
+      nonRenovationFromCash: Math.max(0, rent + contractualPayment - budgetIncome), protectedReserveAfter,
+      closingCash: cash, savings
+    });
+    if ((!plan.loan || balance < 1e-6) && month >= lastStop) break;
+  }
+  plan.ledger = ledger;
+  plan.totals = Object.fromEntries(['rent', 'renovation', 'interest', 'principal', 'depositYield', 'budgetIncome', 'purchaseCapital'].map((key) => [key, ledger.reduce((total, row) => total + row[key], 0)]));
+  plan.totals.finalCash = ledger.at(-1).closingCash;
+  if (plan.loan) {
+    const paymentRows = ledger.filter((row) => row.contractualPayment > 0);
+    Object.assign(plan.loan, {
+      repaymentMonths: paymentRows.length,
+      lastPaymentRowMonth: paymentRows.at(-1).month,
+      lastPaymentBoundaryMonth: paymentRows.at(-1).month + 1,
+      totalInterest: plan.totals.interest, totalPrincipal: plan.totals.principal
+    });
+  }
+  return plan;
+};
 
-export const isPostPurchaseAvailable = (result, renovationMonths) => {
-  const plan = result.hasDownPayment
-    ? (result.months === null ? null : result)                      // current plan exists
-    : (result.mortgageAtDownPayment && result.mortgageAtDownPayment.months !== null
-        ? result.mortgageAtDownPayment
-        : (result.mortgageAffordable && result.mortgageAffordable.months !== null ? result.mortgageAffordable : null));
-  if (!plan) return false;
-  const lag = plan === result ? result.moveMonth : plan.moveMonth - plan.month;
-  return lag <= renovationMonths;
+export const buildCashflow = (plan) => {
+  if (!plan) return null;
+  const rows = plan.ledger.map((row) => ({
+    month: row.month, savings: row.savings, rent: row.rent, renovation: row.renovation,
+    interest: row.interest, principal: row.principal, openingCash: row.openingCash,
+    cashAfterDeal: row.cashAfterDeal, depositYield: row.depositYield, budgetIncome: row.budgetIncome,
+    purchaseCapital: row.purchaseCapital, protectedReserveAfter: row.protectedReserveAfter,
+    closingCash: row.closingCash
+  }));
+  const maximum = rows.reduce((top, row) => Math.max(top, row.savings + row.rent + row.renovation + row.interest + row.principal), 1);
+  return { rows, dealMonth: plan.dealMonth, moveMonth: plan.moveMonth, maximum };
+};
+
+export const calculate = (rawInputs, repaymentMode, renovation = NO_RENOVATION, selectedCriterion = 'earliest') => {
+  const inputs = Object.fromEntries(Object.keys(DEFAULTS).map((key) => [key, number(rawInputs[key])]));
+  const workMonths = renovation.needed ? Math.max(0, Math.round(Number(renovation.months) || 0)) : 0;
+  const renovationCost = renovation.needed ? number(renovation.cost) : 0;
+  const validationErrors = [];
+  if (renovationCost > 0 && workMonths === 0) validationErrors.push('Для ремонта с ненулевой стоимостью укажите срок не менее 1 месяца');
+  if (!['fast', 'long'].includes(repaymentMode)) validationErrors.push('Неизвестный режим погашения');
+  if (!['earliest', 'interestBelowRent'].includes(selectedCriterion)) validationErrors.push('Неизвестный критерий выбора плана');
+  const invalid = validationErrors.length > 0;
+  const monthlyBudget = inputs.monthlySavings + inputs.rent;
+  const growth = 1 + inputs.inflation / 100;
+  const plans = { earliest: null, interestBelowRent: null, cash: null };
+  if (!invalid) {
+    const q = 1 + inputs.depositRate / 100 / 12;
+    const rents = [], waiting = [];
+    let balance = inputs.savings;
+    for (let month = 0; month <= SIMULATION_HORIZON_MONTHS && balance >= 0; month += 1) {
+      waiting.push(balance);
+      balance = q * balance + monthlyBudget - inputs.rent * Math.pow(growth, month / 12);
+    }
+    for (let month = 0; month <= SIMULATION_HORIZON_MONTHS; month += 1) rents.push(inputs.rent * Math.pow(growth, month / 12));
+    const context = { inputs, workMonths, renovationCost, budget: monthlyBudget, growth, q, rate: inputs.mortgageRate / 100 / 12, waiting, rents };
+    for (let month = 0; month < waiting.length && month + workMonths <= SIMULATION_HORIZON_MONTHS; month += 1) {
+      const needMortgage = (!plans.earliest && month <= AFFORDABILITY_HORIZON_MONTHS) || !plans.interestBelowRent;
+      const mortgage = needMortgage ? candidate(context, month, false) : null;
+      if (!plans.earliest && month <= AFFORDABILITY_HORIZON_MONTHS && mortgage) plans.earliest = mortgage;
+      if (!plans.cash) plans.cash = candidate(context, month, true);
+      if (!plans.interestBelowRent && mortgage && (mortgage.loan ? mortgage.loan.firstMonthInterest : 0) < mortgage.indexedRentAtDeal) plans.interestBelowRent = mortgage;
+    }
+    for (const key of Object.keys(plans)) if (plans[key]) fillLedger(context, plans[key], repaymentMode === 'fast');
+  }
+  const selectedPlan = invalid ? null : plans[selectedCriterion];
+  return {
+    status: invalid ? 'invalid-input' : 'ok', validationErrors, monthlyBudget, selectedCriterion,
+    selectionStatus: invalid ? 'invalid-input' : selectedPlan ? 'available' : 'unavailable',
+    selectionReason: invalid ? 'Исправьте некорректные входные данные' : selectedPlan ? null : 'План по выбранному критерию недоступен в горизонте поиска',
+    plans, selectedPlan,
+    forecast: { propertyInYear: inputs.propertyPrice * growth, rentInYear: inputs.rent * growth }
+  };
 };
