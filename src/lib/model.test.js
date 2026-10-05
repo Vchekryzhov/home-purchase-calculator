@@ -1,461 +1,459 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULTS, NO_RENOVATION, RENOVATION_COST_SHARE, SIMULATION_HORIZON_MONTHS, loanPlan, loanPlanStepped, loanScheduleStepped, paymentForTerm, selectedLoanPlan, selectedRenovationLoanPlan, allocateAfterPurchase, calculate, isMortgagePaymentTooLow, isPostPurchaseAvailable, buildCashflow, rentPaidUntilMonth } from './model.js';
-import { plural, yearsLabel, monthsLabel, duration } from './format.js';
-import expected from './model.characterization.json';
+import * as model from './model.js';
+import fixtures from './model.characterization.json';
+import { addMonths } from './format.js';
 
-const round2 = (value) => (typeof value === 'number' ? Math.round(value * 100) / 100 : value);
-const roundDeep = (value) => {
-  if (typeof value === 'number') return round2(value);
-  if (Array.isArray(value)) return value.map(roundDeep);
-  if (value && typeof value === 'object') { const out = {}; for (const [key, entry] of Object.entries(value)) out[key] = roundDeep(entry); return out; }
-  return value;
+const run = (id) => {
+  const entry = fixtures[id];
+  return model.calculate(entry.inputs, entry.repaymentMode, entry.renovation, entry.selectedCriterion);
+};
+const moneyEqual = (actual, expected, path = 'value') => {
+  expect(typeof actual, path).toBe('number');
+  expect(Number.isFinite(actual), path).toBe(true);
+  expect(Math.abs(actual - expected), `${path}: actual=${actual}, expected=${expected}`).toBeLessThanOrEqual(0.01);
 };
 
-describe('loanPlan', () => {
-  it('returns a zero plan for zero principal', () => {
-    expect(loanPlan(0, 50000, 16.9)).toEqual({ months: 0, overpayment: 0, firstMonthInterest: 0 });
-  });
-  it('rejects non-positive payment', () => {
-    expect(loanPlan(1000000, 0, 16.9)).toBeNull();
-  });
-  it('rejects payment that never covers first-month interest', () => {
-    expect(loanPlan(1000000, 100, 16.9)).toBeNull();
-  });
-  it('rejects when the loan cannot be repaid within maxMonths', () => {
-    expect(loanPlan(10000000, 1000, 16.9)).toBeNull();
-  });
-  it('repays a loan and reports overpayment', () => {
-    const plan = loanPlan(1000000, 100000, 16.9);
-    expect(plan.months).toBe(11);
-    expect(plan.overpayment).toBeCloseTo(85474.55, 1);
-    expect(plan.firstMonthInterest).toBeCloseTo(14083.33, 1);
-  });
-});
-
-describe('paymentForTerm', () => {
-  it('returns 0 for zero principal', () => {
-    expect(paymentForTerm(0, 16.9)).toBe(0);
-  });
-  it('falls back to linear split at zero rate', () => {
-    expect(paymentForTerm(1200000, 0, 12)).toBe(100000);
-  });
-  it('computes the annuity payment', () => {
-    expect(paymentForTerm(1000000, 16.9, 360)).toBeCloseTo(14175.6, 1);
-  });
-});
-
-describe('selectedLoanPlan', () => {
-  it('uses the maximum payment in fast mode', () => {
-    const plan = selectedLoanPlan(1000000, 100000, 16.9, 'fast');
-    expect(plan.payment).toBe(100000);
-    expect(plan.months).toBe(11);
-  });
-  it('uses the 30-year annuity in long mode when it fits', () => {
-    const plan = selectedLoanPlan(1000000, 100000, 16.9, 'long');
-    expect(plan.months).toBe(360);
-    expect(plan.payment).toBeCloseTo(14175.6, 1);
-  });
-  it('rejects long mode when the annuity exceeds capacity', () => {
-    expect(selectedLoanPlan(10000000, 10000, 16.9, 'long')).toBeNull();
-  });
-  it('rejects fast mode when even the maximum payment cannot service the loan', () => {
-    expect(selectedLoanPlan(10000000, 1000, 16.9, 'fast')).toBeNull();
-  });
-});
-
-describe('calculate (characterization)', () => {
-  for (const [name, overrides, mode] of [
-    ['defaults-fast', {}, 'fast'],
-    ['defaults-long', {}, 'long'],
-    ['rich-fast', { savings: 3000000 }, 'fast'],
-    ['rich-long', { savings: 3000000 }, 'long'],
-    ['saver-fast', { monthlySavings: 300000 }, 'fast'],
-    ['lowrent-fast', { rent: 10000 }, 'fast'],
-    ['midrent-fast', { rent: 60000 }, 'fast'],
-    ['poor-fast', { monthlySavings: 1000, rent: 0 }, 'fast'],
-    ['poor-long', { monthlySavings: 1000, rent: 0 }, 'long'],
-  ]) {
-    it(`matches pre-refactor behaviour: ${name}`, () => {
-      const inputs = { ...DEFAULTS, ...overrides };
-      const result = calculate(inputs, mode);
-      expect(roundDeep(result)).toEqual(expected[name].result);
-      expect(isMortgagePaymentTooLow(result)).toBe(expected[name].mortgagePaymentTooLow);
+describe('slice 1: normalization, validation and envelope', () => {
+  for (const id of ['target-zero-work-invalid', 'target-mode-invalid', 'target-criterion-invalid']) {
+    it(`rejects ${id} with exact validation messages`, () => {
+      const result = run(id);
+      expect(result.status).toBe('invalid-input');
+      expect(result.validationErrors).toEqual(fixtures[id].expected.statuses.validationErrors);
+      expect(result.selectionStatus).toBe('invalid-input');
+      expect(result.plans).toEqual({ earliest: null, interestBelowRent: null, cash: null });
+      expect(result.selectedPlan).toBeNull();
+      expect(result.selectionReason).toMatch(/[А-Яа-я]/);
     });
   }
-
-  it('higher rent moves the «проценты < аренда» threshold earlier', () => {
-    const low = calculate({ ...DEFAULTS, rent: 10000 }, 'fast').thresholdPurchase.month;
-    const mid = calculate({ ...DEFAULTS, rent: 60000 }, 'fast').thresholdPurchase.month;
-    const high = calculate({ ...DEFAULTS, rent: 80000 }, 'fast').thresholdPurchase.month;
-    expect(low).toBe(154);
-    expect(mid).toBe(104);
-    expect(high).toBe(81);
+  it('returns the fixed-budget and forecast envelope for a simple entry', () => {
+    const result = run('matrix-no-renovation-fast');
+    expect(result.status).toBe('ok');
+    expect(result.validationErrors).toEqual([]);
+    expect(result.selectedCriterion).toBe('earliest');
+    expect(result.monthlyBudget).toBe(15);
+    expect(result.forecast).toEqual({ propertyInYear: 1000, rentInYear: 5 });
+    expect(Object.keys(result).sort()).toEqual(['status', 'validationErrors', 'monthlyBudget', 'selectedCriterion', 'selectionStatus', 'selectionReason', 'plans', 'selectedPlan', 'forecast'].sort());
   });
-
-  it('keeps a working mortgage scenario when renovation is absent (regression anchor)', () => {
-    const result = calculate({ ...DEFAULTS, savings: 3000000 }, 'fast');
-    expect(result.hasDownPayment).toBe(true);
-    expect(result.months).toBe(102);
-    expect(result.cashPurchase.month).toBe(92);
-    expect(result.thresholdPurchase.month).toBe(20);
+  it('normalizes all input fields without adding invalid cases', () => {
+    const result = model.calculate(Object.fromEntries(Object.keys(model.DEFAULTS).map((key) => [key, '-20'])), 'long');
+    expect(result.status).toBe('ok');
+    expect(result.monthlyBudget).toBe(0);
+    expect(result.forecast).toEqual({ propertyInYear: 0, rentInYear: 0 });
   });
 });
 
-describe('renovation: loanPlanStepped', () => {
-  it('equals the flat plan when the switch month is zero', () => {
-    expect(loanPlanStepped(3000000, 30000, 130000, 16.9, 0)).toEqual(loanPlan(3000000, 130000, 16.9));
+describe('slice 2: fixed budget and indexed waiting', () => {
+  it('accumulates the zero-rate cash price from the fixed nominal budget', () => {
+    const plan = run('matrix-zero-rates').plans.cash;
+    const golden = fixtures['matrix-zero-rates'].expected.plans.cash;
+    expect(plan.dealMonth).toBe(golden.dealMonth);
+    moneyEqual(plan.availableSavingsAtDeal, golden.availableSavingsAtDeal);
+    moneyEqual(plan.propertyPriceAtDeal, golden.propertyPriceAtDeal);
+    moneyEqual(plan.renovationCostAtDeal, golden.renovationCostAtDeal);
   });
-  it('takes longer when the first months pay less', () => {
-    const stepped = loanPlanStepped(3000000, 30000, 130000, 16.9, 6);
-    const flat = loanPlan(3000000, 130000, 16.9);
-    expect(stepped.months).toBe(35);
-    expect(flat.months).toBe(29);
-    expect(stepped.overpayment).toBeGreaterThan(flat.overpayment);
-  });
-  it('returns a zero plan for zero principal', () => {
-    expect(loanPlanStepped(0, 30000, 130000, 16.9, 6)).toEqual({ months: 0, overpayment: 0, firstMonthInterest: 0 });
-  });
-  it('rejects when never repaid within the cap', () => {
-    expect(loanPlanStepped(10000000, 1000, 1000, 16.9, 6)).toBeNull();
+  it('stops waiting when indexed rent exhausts cash instead of clamping contributions', () => {
+    const result = run('matrix-inflation-unreachable');
+    expect(result.monthlyBudget).toBe(10);
+    expect(result.plans.cash).toBeNull();
+    expect(result.forecast).toEqual({ propertyInYear: 200, rentInYear: 20 });
   });
 });
 
-describe('renovation: selectedRenovationLoanPlan', () => {
-  it('long mode rejects an annuity unaffordable during renovation months (rent does not help yet)', () => {
-    expect(selectedRenovationLoanPlan(3000000, 30000, 130000, 16.9, 'long', 6)).toBeNull();
-  });
-  it('long mode accepts when the annuity fits even the renovation-phase capacity', () => {
-    const plan = selectedRenovationLoanPlan(3000000, 50000, 130000, 16.9, 'long', 6);
-    expect(plan.months).toBe(360);
-    expect(plan.payment).toBeCloseTo(42526.79, 1);
-  });
-  it('long mode ignores the during-capacity once renovation months are zero', () => {
-    const plan = selectedRenovationLoanPlan(3000000, 1, 130000, 16.9, 'long', 0);
-    expect(plan.months).toBe(360);
-  });
-  it('fast mode rejects when the 30-year annuity does not fit the renovation-phase capacity', () => {
-    expect(selectedRenovationLoanPlan(3000000, 30000, 130000, 16.9, 'fast', 6)).toBeNull();
-  });
-  it('fast mode pays the 30-year annuity during renovation and reports the post-move payment', () => {
-    const plan = selectedRenovationLoanPlan(3000000, 50000, 130000, 16.9, 'fast', 6);
-    expect(plan.months).toBe(35);
-    expect(plan.payment).toBe(130000);
-    expect(plan.annuity).toBeCloseTo(42526.79, 1);
-    expect(plan.overpayment).toBeCloseTo(906238.8, -1);
-  });
-  it('fast mode ignores the during-capacity once renovation months are zero', () => {
-    const plan = selectedRenovationLoanPlan(3000000, 1, 130000, 16.9, 'fast', 0);
-    expect(plan.months).toBe(29);
-    expect(plan.payment).toBe(130000);
-  });
+describe('slice 3: smallest-admissible down payment', () => {
+  for (const id of ['target-interior-floor', 'matrix-rich-surplus']) {
+    it(`uses only the percentage and annuity floors: ${id}`, () => {
+      const result = run(id), plan = result.plans.earliest;
+      const golden = fixtures[id].expected.plans.earliest;
+      expect(plan.dealMonth).toBe(golden.dealMonth);
+      moneyEqual(plan.savingsGoal.minimumDownPayment, golden.savingsGoal.minimumDownPayment);
+      moneyEqual(plan.savingsGoal.actualDownPayment, golden.savingsGoal.actualDownPayment);
+      moneyEqual(plan.loan.principal, golden.loan.principal);
+      moneyEqual(plan.loan.contractualAnnuity, golden.loan.contractualAnnuity);
+      moneyEqual(plan.loan.firstMonthInterest, golden.loan.firstMonthInterest);
+      expect(plan.loan.contractualAnnuity).toBeLessThanOrEqual(result.monthlyBudget + 1e-8);
+    });
+  }
 });
 
-describe('renovation: calculate «накопить до»', () => {
-  const reno = { needed: true, cost: 1500000, months: 6 };
-
-  it('is byte-identical to the pre-renovation model when renovation is off', () => {
-    expect(calculate(DEFAULTS, 'fast', NO_RENOVATION)).toEqual(calculate(DEFAULTS, 'fast'));
-    expect(calculate(DEFAULTS, 'fast', { needed: false, cost: 999999, months: 6 })).toEqual(calculate(DEFAULTS, 'fast'));
-  });
-
-  it('adds no renovation fields when renovation is off', () => {
-    const result = calculate(DEFAULTS, 'fast');
-    expect(result.moveMonth).toBeUndefined();
-    expect(result.cashPurchase.moveMonth).toBeUndefined();
-  });
-
-  it('cash purchase waits for price + indexed renovation cost, move comes after renovation', () => {
-    const result = calculate(DEFAULTS, 'fast', reno);
-    expect(result.cashPurchase.month).toBe(181);
-    expect(result.cashPurchase.moveMonth).toBe(187);
-    expect(result.cashPurchase.renovationCost).toBeCloseTo(3131096.99, 1);
-    expect(result.cashPurchase.rentPaid).toBeCloseTo(22364493.65, 1);
-  });
-
-  it('cash rent paid includes the renovation months (cross-check with rentPaidUntilMonth)', () => {
-    const result = calculate(DEFAULTS, 'fast', reno);
-    expect(result.cashPurchase.rentPaid).toBeCloseTo(rentPaidUntilMonth(DEFAULTS, result.cashPurchase.moveMonth), 1);
-  });
-
-  it('down payment target grows by the indexed renovation cost and the deal shifts later', () => {
-    const result = calculate(DEFAULTS, 'fast', reno);
-    expect(result.mortgageAtDownPayment.month).toBe(159);
-    expect(result.mortgageAtDownPayment.moveMonth).toBe(165);
-    expect(result.mortgageAtDownPayment.months).toBe(39);
-  });
-
-  it('deal waits until the 30-year annuity of the principal fits monthly savings — in both repayment modes', () => {
-    const fast = calculate(DEFAULTS, 'fast', reno);
-    const long = calculate(DEFAULTS, 'long', reno);
-    for (const result of [fast, long]) {
-      const plan = result.mortgageAtDownPayment;
-      expect(plan.month).toBe(159);
-      expect(plan.moveMonth).toBe(165);
-      expect(plan.annuity).toBeLessThanOrEqual(50000 + 0.01);
-      expect(plan.principal).toBeGreaterThan(0);
-    }
-    expect(fast.mortgageAtDownPayment.month).toBe(long.mortgageAtDownPayment.month);
-  });
-
-  it('zero renovation months skip the annuity waiting constraint', () => {
-    const result = calculate(DEFAULTS, 'fast', { needed: true, cost: 1500000, months: 0 });
-    expect(result.mortgageAtDownPayment.month).toBe(97);
-    expect(result.mortgageAtDownPayment.moveMonth).toBe(97);
-    expect(result.mortgageAtDownPayment.months).not.toBeNull();
-  });
-
-  it('mortgage now: upfront cost = down payment + renovation cost, principal shrinks by the renovation budget', () => {
-    const result = calculate({ ...DEFAULTS, savings: 8000000 }, 'fast', reno);
-    expect(result.hasDownPayment).toBe(true);
-    expect(result.upfrontCost).toBe(3500000);
-    expect(result.principal).toBe(3500000);
-    expect(result.moveMonth).toBe(6);
-  });
-
-  it('rent does not flow into the mortgage payment during renovation months', () => {
-    const inputs = { ...DEFAULTS, savings: 8000000, monthlySavings: 30000, rent: 100000 };
-    const without = calculate(inputs, 'long');
-    const withReno = calculate(inputs, 'long', { needed: true, cost: 1000000, months: 6 });
-    expect(without.months).toBe(360);
-    expect(withReno.months).toBeNull();
-    expect(withReno.hasDownPayment).toBe(true);
-    expect(isMortgagePaymentTooLow(withReno)).toBe(true);
-  });
-
-  it('an annuity unaffordable during renovation blocks fast mode too — no negative amortization', () => {
-    const inputs = { ...DEFAULTS, savings: 8000000, monthlySavings: 30000, rent: 100000 };
-    const withReno = calculate(inputs, 'fast', { needed: true, cost: 1000000, months: 6 });
-    expect(withReno.months).toBeNull();
-    expect(withReno.hasDownPayment).toBe(true);
-    expect(isMortgagePaymentTooLow(withReno)).toBe(true);
-  });
-
-  it('threshold purchase also waits for the renovation budget and reports the move month', () => {
-    const result = calculate(DEFAULTS, 'fast', reno);
-    expect(result.thresholdPurchase.month).toBe(159);
-    expect(result.thresholdPurchase.moveMonth).toBe(165);
-    expect(result.thresholdPurchase.annuity).toBeLessThanOrEqual(50000 + 0.01);
-  });
-
-  it('affordability waits for down payment + renovation and reports the move month', () => {
-    const result = calculate({ ...DEFAULTS, monthlySavings: 300000 }, 'fast', reno);
-    expect(result.mortgageAffordable.month).toBe(12);
-    expect(result.mortgageAffordable.moveMonth).toBe(18);
-  });
+describe('slice 4: minimal reserve and exact split', () => {
+  for (const id of ['matrix-immediate-reserve', 'matrix-wait-reserve', 'target-prefix-offset', 'target-yield-reserve-nominal', 'matrix-cash-future-income']) {
+    it(`funds the discounted prefix maximum: ${id}`, () => {
+      const result = run(id);
+      for (const key of ['earliest', 'cash']) {
+        const golden = fixtures[id].expected.plans[key];
+        if (!golden) continue;
+        const plan = result.plans[key];
+        expect(plan.dealMonth).toBe(golden.dealMonth);
+        for (const field of Object.keys(golden.savingsGoal)) moneyEqual(plan.savingsGoal[field], golden.savingsGoal[field], `${id}.${key}.${field}`);
+        expect(plan.savingsGoal.renovationSavings + plan.savingsGoal.deficitReserve).toBe(plan.savingsGoal.totalReserve);
+      }
+    });
+  }
 });
 
-describe('renovation: allocateAfterPurchase', () => {
-  it('reserves renovation cash beyond the minimum down payment', () => {
-    const allocation = allocateAfterPurchase(4000000, 3400000, 100000, 16.9, 20, 1500000, 6);
-    expect(allocation.down).toBe(800000);
-    expect(allocation.principal).toBe(3200000);
-    expect(allocation.renoCash).toBe(1500000);
-    expect(allocation.lag).toBe(6);
-    expect(allocation.annuity).toBeCloseTo(45361.91, 1);
-    expect(allocation.surplus).toBeCloseTo(54638.09, 1);
-  });
-
-  it('prefers the maximum down payment when the bigger surplus finishes renovation sooner', () => {
-    const allocation = allocateAfterPurchase(4000000, 3400000, 100000, 16.9, 20, 12000000, 6);
-    expect(allocation.down).toBe(3400000);
-    expect(allocation.principal).toBe(600000);
-    expect(allocation.renoCash).toBe(0);
-    expect(allocation.lag).toBe(132);
-  });
-
-  it('returns null when the balance cannot cover the minimum down payment', () => {
-    expect(allocateAfterPurchase(4000000, 1500000, 50000, 16.9, 20, 1000000, 6)).toBeNull();
-  });
-
-  it('keeps the works duration when renovation is fully funded in cash', () => {
-    const allocation = allocateAfterPurchase(4000000, 4000000, 100000, 16.9, 20, 1500000, 6);
-    expect(allocation.renoCash).toBe(1500000);
-    expect(allocation.lag).toBe(6);
-  });
+const boundaryIndices = (plan) => ({
+  beforeDeal: plan.dealMonth > 0 ? plan.dealMonth - 1 : null,
+  deal: plan.dealMonth,
+  firstWork: plan.workMonths > 0 ? plan.dealMonth : null,
+  lastWork: plan.workMonths > 0 ? plan.moveMonth - 1 : null,
+  moveIn: plan.moveMonth,
+  lastLoanPayment: plan.loan?.lastPaymentRowMonth ?? null
 });
 
-describe('renovation: calculate «после покупки»', () => {
-  const renoAfter = { needed: true, cost: 1500000, months: 6, funding: 'after' };
-
-  it('picks the deal month that minimises the move date, funding renovation from savings beyond the down payment', () => {
-    const result = calculate(DEFAULTS, 'fast', renoAfter);
-    expect(result.mortgageAffordable.month).toBe(159);
-    expect(result.mortgageAffordable.moveMonth).toBe(165);
-    expect(result.mortgageAffordable.renoCash).toBeGreaterThan(2800000);
-    expect(result.mortgageAffordable.principal).toBeCloseTo(3527188, -3);
-  });
-
-  it('fast and long modes now differ in term and overpayment', () => {
-    const fast = calculate(DEFAULTS, 'fast', renoAfter).mortgageAffordable;
-    const long = calculate(DEFAULTS, 'long', renoAfter).mortgageAffordable;
-    expect(fast.months).toBeLessThan(60);
-    expect(long.months).toBe(360);
-    expect(long.overpayment).toBeGreaterThan(fast.overpayment);
-    expect(long.payment).toBeCloseTo(50000, -3);
-    expect(fast.moveMonth).toBe(long.moveMonth);
-  });
-
-  it('rich savings buy now and fund renovation in cash', () => {
-    const result = calculate({ ...DEFAULTS, savings: 8000000 }, 'fast', renoAfter);
-    expect(result.hasDownPayment).toBe(true);
-    expect(result.moveMonth).toBe(6);
-    expect(result.principal).toBeCloseTo(3527188, -3);
-    expect(result.months).toBeLessThan(60);
-  });
-
-  it('threshold purchase agrees on the best move date', () => {
-    const result = calculate(DEFAULTS, 'long', renoAfter);
-    expect(result.thresholdPurchase.month).toBe(159);
-    expect(result.thresholdPurchase.moveMonth).toBe(165);
-  });
-
-  it('cash deal waits for the price only, then funds renovation from monthly savings', () => {
-    const result = calculate(DEFAULTS, 'fast', renoAfter);
-    expect(result.cashPurchase.month).toBe(163);
-    expect(result.cashPurchase.moveMonth).toBe(222);
-    expect(result.cashPurchase.rentPaid).toBeCloseTo(28787556.94, 1);
-  });
-});
-
-describe('renovation: isPostPurchaseAvailable', () => {
-  const renoAfter = { needed: true, cost: 1500000, months: 6, funding: 'after' };
-
-  it('available when financing lag equals renovation months', () => {
-    const result = calculate(DEFAULTS, 'annuity', renoAfter);
-    expect(result.mortgageAffordable.month).toBe(159);
-    expect(result.mortgageAffordable.moveMonth).toBe(165);
-    expect(isPostPurchaseAvailable(result, 6)).toBe(true);
-  });
-
-  it('unavailable when financing lag exceeds renovation months', () => {
-    const result = calculate({ ...DEFAULTS, savings: 7000000 }, 'annuity', renoAfter);
-    expect(result.hasDownPayment).toBe(true);
-    expect(result.months).not.toBeNull();
-    expect(result.moveMonth).toBe(201);
-    expect(isPostPurchaseAvailable(result, 6)).toBe(false);
-  });
-
-  it('unavailable when no post-purchase plan exists', () => {
-    const result = calculate({ ...DEFAULTS, monthlySavings: 15000 }, 'annuity', renoAfter);
-    expect(result.mortgageAtDownPayment.months).toBeNull();
-    expect(result.mortgageAffordable).toBeNull();
-    expect(isPostPurchaseAvailable(result, 6)).toBe(false);
-  });
-
-  it('available with rich savings', () => {
-    const result = calculate({ ...DEFAULTS, savings: 8000000 }, 'fast', renoAfter);
-    expect(result.hasDownPayment).toBe(true);
-    expect(result.moveMonth).toBe(6);
-    expect(isPostPurchaseAvailable(result, 6)).toBe(true);
-  });
-});
-
-describe('rentPaidUntilMonth', () => {
-  it('matches the cash simulation rent total for the base case', () => {
-    expect(rentPaidUntilMonth(DEFAULTS, 163)).toBeCloseTo(18459674.31, 1);
-  });
-  it('grows with the month index and is zero at move-in now', () => {
-    expect(rentPaidUntilMonth(DEFAULTS, 0)).toBe(0);
-    expect(rentPaidUntilMonth(DEFAULTS, 200)).toBeGreaterThan(rentPaidUntilMonth(DEFAULTS, 100));
-  });
-});
-
-describe('buildCashflow', () => {
-  const total = (row) => row.savings + row.rent + row.renovation + row.interest + row.principal;
-  const sum = (rows, key) => rows.reduce((acc, row) => acc + row[key], 0);
-  const zero = { ...DEFAULTS, inflation: 0, depositRate: 0 };
-
-  it('returns null when no feasible mortgage plan exists', () => {
-    expect(buildCashflow({ ...DEFAULTS, monthlySavings: 1000, rent: 0 }, 'fast')).toBeNull();
-  });
-
-  it('accumulation months split into savings and rent; loan months into principal and interest', () => {
-    const data = buildCashflow({ ...zero, rent: 0 }, 'fast');
-    expect(data.rows[0]).toEqual({ month: 0, savings: 50000, rent: 0, renovation: 0, interest: 0, principal: 0 });
-    const loanRow = data.rows[data.dealMonth];
-    expect(loanRow.rent).toBe(0);
-    expect(loanRow.principal).toBeGreaterThan(0);
-    expect(loanRow.interest).toBeGreaterThan(0);
-    expect(loanRow.principal + loanRow.interest).toBeCloseTo(50000, 1);
-  });
-
-  it('monthly totals never exceed savings-plus-rent and drop the savings stack after move-in', () => {
-    for (const [name, renovation] of [
-      ['no-renovation', NO_RENOVATION],
-      ['before', { needed: true, cost: 1500000, months: 6, funding: 'before' }],
-      ['after', { needed: true, cost: 1500000, months: 6, funding: 'after' }],
-    ]) {
-      const data = buildCashflow(DEFAULTS, 'fast', renovation);
-      const envelope = 50000 + 80000;
-      for (const row of data.rows) {
-        if (row.month >= data.moveMonth) {
-          expect(total(row)).toBeLessThanOrEqual(envelope + 1);
-          expect(row.savings).toBe(0);
-        } else if (name !== 'after' || row.month !== data.dealMonth) {
-          expect(total(row)).toBeCloseTo(envelope, 0);
-          expect(row.rent).toBe(80000);
+describe('slice 5: complete ledger and boundary ordering', () => {
+  for (const id of ['matrix-no-renovation-long', 'target-interior-floor']) {
+    it(`reconciles every row and performs deal before yield: ${id}`, () => {
+      const result = run(id);
+      for (const key of ['earliest', 'cash']) {
+        const plan = result.plans[key], golden = fixtures[id].expected.plans[key];
+        if (!golden) continue;
+        expect(plan.ledger.length).toBeGreaterThan(plan.dealMonth);
+        for (const [index, row] of plan.ledger.entries()) {
+          expect(row.month).toBe(index);
+          moneyEqual(row.openingCash, index ? plan.ledger[index - 1].closingCash : fixtures[id].inputs.savings);
+          moneyEqual(row.closingCash, row.openingCash - row.purchaseCapital + row.depositYield + row.budgetIncome - row.rent - row.renovation - row.interest - row.principal);
+        }
+        const indices = boundaryIndices(plan);
+        for (const [name, expectedRow] of Object.entries(golden.boundaryRows)) {
+          if (name === 'lastLoanPayment') continue;
+          const actual = indices[name] === null ? null : plan.ledger[indices[name]] ?? null;
+          if (!expectedRow) { expect(actual).toBeNull(); continue; }
+          for (const [field, value] of Object.entries(expectedRow)) {
+            if (field === 'savings') continue;
+            if (field === 'month') expect(actual[field]).toBe(value);
+            else moneyEqual(actual[field], value, `${id}.${key}.${name}.${field}`);
+          }
         }
       }
-      expect(data.maximum).toBeGreaterThan(0);
-      expect(data.rows.length).toBeGreaterThan(0);
-    }
-  });
-
-  it('«накопить до»: renovation is spread over the accumulation months and sums to its indexed cost', () => {
-    const data = buildCashflow({ ...zero, propertyPrice: 2500000, savings: 0, monthlySavings: 100000, rent: 0 }, 'fast', { needed: true, cost: 300000, months: 6, funding: 'before' });
-    expect(data.dealMonth).toBe(8);
-    expect(data.moveMonth).toBe(14);
-    for (let month = 0; month < data.dealMonth; month += 1) {
-      expect(data.rows[month].renovation).toBeCloseTo(37500, 1);
-      expect(data.rows[month].savings).toBeCloseTo(62500, 1);
-    }
-    expect(sum(data.rows, 'renovation')).toBeCloseTo(300000, 1);
-    for (let month = data.dealMonth; month < data.moveMonth; month += 1) {
-      expect(data.rows[month].principal).toBeGreaterThan(0);
-      expect(data.rows[month].principal + data.rows[month].interest).toBeCloseTo(28351.19, 1);
-      expect(data.rows[month].savings).toBeCloseTo(71648.81, 1);
-      expect(data.rows[month].rent).toBe(0);
-    }
-    const afterMove = data.rows[data.moveMonth + 3];
-    expect(afterMove.principal + afterMove.interest).toBeCloseTo(100000, 1);
-    expect(afterMove.savings).toBe(0);
-  });
-
-  it('«после покупки»: renovation cash lands at the deal, then the surplus finishes it', () => {
-    const data = buildCashflow({ ...zero, propertyPrice: 4000000, savings: 3400000, monthlySavings: 100000, rent: 0 }, 'fast', { needed: true, cost: 1200000, months: 6, funding: 'after' });
-    expect(data.dealMonth).toBe(0);
-    expect(data.moveMonth).toBe(6);
-    expect(data.rows[0].renovation).toBeCloseTo(1200000, 1);
-    expect(sum(data.rows, 'renovation')).toBeCloseTo(1200000, 1);
-    for (let month = 0; month < 6; month += 1) {
-      expect(data.rows[month].principal + data.rows[month].interest).toBeCloseTo(45361.91, 0);
-    }
-  });
-
-  it('loan payments match the amortization plan', () => {
-    const inputs = { ...zero, rent: 0, monthlySavings: 100000, propertyPrice: 2500000, savings: 0 };
-    const plan = calculate(inputs, 'fast').mortgageAtDownPayment;
-    const data = buildCashflow(inputs, 'fast');
-    expect(sum(data.rows, 'principal')).toBeCloseTo(plan.principal, 1);
-    expect(sum(data.rows, 'principal') + sum(data.rows, 'interest')).toBeCloseTo(plan.principal + plan.overpayment, 1);
+    });
+  }
+  it('includes the cash deal row with zero work duration and no rows afterward', () => {
+    const plan = run('matrix-no-renovation-long').plans.cash;
+    expect(plan.ledger.length).toBe(plan.dealMonth + 1);
+    expect(plan.ledger.at(-1).purchaseCapital).toBe(1000);
+    expect(plan.ledger.at(-1).rent).toBe(0);
   });
 });
 
-describe('format helpers', () => {
-  it('picks correct Russian plural forms', () => {
-    expect(plural(1, 'год', 'года', 'лет')).toBe('год');
-    expect(plural(3, 'год', 'года', 'лет')).toBe('года');
-    expect(plural(11, 'год', 'года', 'лет')).toBe('лет');
-    expect(plural(21, 'месяц', 'месяца', 'месяцев')).toBe('месяц');
+describe('slice 7: chart savings field from actual row flows', () => {
+  it('long mode retains the unconsumed budget as savings', () => {
+    const plan = run('matrix-no-renovation-long').plans.earliest;
+    const golden = fixtures['matrix-no-renovation-long'].expected.plans.earliest;
+    moneyEqual(plan.ledger[0].savings, golden.boundaryRows.deal.savings, 'deal.savings');
+    moneyEqual(plan.ledger[golden.loan.lastPaymentRowMonth].savings, golden.boundaryRows.lastLoanPayment.savings, 'lastPayment.savings');
+    for (const row of plan.ledger) {
+      moneyEqual(row.savings, Math.max(0, row.budgetIncome - row.rent - row.renovation - row.interest - row.principal), `row ${row.month}.savings`);
+    }
   });
-  it('labels years and months', () => {
-    expect(yearsLabel(5)).toBe('5 лет');
-    expect(monthsLabel(2)).toBe('2 месяца');
+  it('fast mode reports zero savings on loan rows and the remainder after payoff', () => {
+    const plan = run('matrix-no-renovation-fast').plans.earliest;
+    const golden = fixtures['matrix-no-renovation-fast'].expected.plans.earliest;
+    moneyEqual(plan.ledger[0].savings, golden.boundaryRows.deal.savings, 'deal.savings');
+    expect(plan.ledger[0].savings).toBe(0);
+    moneyEqual(plan.ledger[golden.loan.lastPaymentRowMonth].savings, golden.boundaryRows.lastLoanPayment.savings, 'lastPayment.savings');
+    for (const row of plan.ledger) {
+      moneyEqual(row.savings, Math.max(0, row.budgetIncome - row.rent - row.renovation - row.interest - row.principal), `row ${row.month}.savings`);
+    }
   });
-  it('formats durations', () => {
-    expect(duration(6)).toBe('6 месяцев');
-    expect(duration(13)).toBe('1 год 1 месяц');
-    expect(duration(24)).toBe('2 года');
-    expect(duration(47)).toBe('3 года 11 месяцев');
+});
+
+describe('slice 8: fast-mode protected early repayment', () => {
+  for (const id of ['matrix-zero-rates', 'matrix-immediate-reserve', 'matrix-wait-reserve', 'rich-fast']) {
+    it(`repays unprotected cash down to remaining-obligation protection: ${id}`, () => {
+      const entry = fixtures[id];
+      const plan = model.calculate(entry.inputs, entry.repaymentMode, entry.renovation, entry.selectedCriterion).plans.earliest;
+      const golden = entry.expected.plans.earliest;
+      expect(plan.loan.repaymentMonths).toBe(golden.loan.repaymentMonths);
+      expect(plan.loan.lastPaymentRowMonth).toBe(golden.loan.lastPaymentRowMonth);
+      moneyEqual(plan.loan.totalInterest, golden.loan.totalInterest, `${id}.totalInterest`);
+      moneyEqual(plan.totals.finalCash, golden.totals.finalCash, `${id}.finalCash`);
+      expect(plan.ledger.length).toBe(Math.max(golden.loan.lastPaymentRowMonth, golden.moveMonth - 1) + 1);
+      const indices = boundaryIndices(plan);
+      for (const [name, expectedRow] of Object.entries(golden.boundaryRows)) {
+        const actual = indices[name] === null ? null : plan.ledger[indices[name]] ?? null;
+        if (!expectedRow) { expect(actual, `${id}.${name}`).toBeNull(); continue; }
+        for (const [field, value] of Object.entries(expectedRow)) {
+          if (field === 'month') expect(actual[field], `${id}.${name}.month`).toBe(value);
+          else moneyEqual(actual[field], value, `${id}.${name}.${field}`);
+        }
+      }
+      for (const row of plan.ledger) {
+        if (row.closingLoanPrincipal > 0.01) expect(row.closingCash, `${id} row ${row.month}`).toBeLessThanOrEqual(row.protectedReserveAfter + 0.01);
+      }
+    });
+  }
+  it('keeps the savings goal of the mandatory schedule in fast mode', () => {
+    const entry = fixtures['matrix-immediate-reserve'];
+    const plan = model.calculate(entry.inputs, entry.repaymentMode, entry.renovation, entry.selectedCriterion).plans.earliest;
+    for (const [field, value] of Object.entries(entry.expected.plans.earliest.savingsGoal)) {
+      moneyEqual(plan.savingsGoal[field], value, `savingsGoal.${field}`);
+    }
+  });
+});
+
+describe('slice 9: interestBelowRent threshold search', () => {
+  const cases = [
+    ['matrix-threshold-base', 144], ['rich-fast', 118], ['target-payoff-beyond720', 432],
+    ['matrix-cash-future-income', 0], ['matrix-immediate-reserve', null], ['target-strict-equality', null]
+  ];
+  for (const [id, dealMonth] of cases) {
+    it(`finds the first qualifying boundary with strictly lower first-month interest: ${id}`, () => {
+      const entry = fixtures[id];
+      const plan = model.calculate(entry.inputs, entry.repaymentMode, entry.renovation, entry.selectedCriterion).plans.interestBelowRent;
+      const golden = entry.expected.plans.interestBelowRent;
+      if (golden === null) { expect(plan, id).toBeNull(); return; }
+      expect(plan.kind, id).toBe(golden.kind);
+      expect(plan.dealMonth, id).toBe(dealMonth);
+      if (plan.loan) expect(plan.loan.firstMonthInterest, id).toBeLessThan(plan.indexedRentAtDeal);
+      else expect(plan.loan, id).toBeNull();
+      moneyEqual(plan.propertyPriceAtDeal, golden.propertyPriceAtDeal, `${id}.price`);
+      moneyEqual(plan.indexedRentAtDeal, golden.indexedRentAtDeal, `${id}.rent`);
+      if (golden.loan) {
+        moneyEqual(plan.loan.principal, golden.loan.principal, `${id}.principal`);
+        moneyEqual(plan.loan.contractualAnnuity, golden.loan.contractualAnnuity, `${id}.annuity`);
+        moneyEqual(plan.loan.firstMonthInterest, golden.loan.firstMonthInterest, `${id}.firstInterest`);
+        expect(plan.loan.lastPaymentRowMonth, id).toBe(golden.loan.lastPaymentRowMonth);
+      }
+    });
+  }
+  it('keeps the threshold plan available without earliest fallback when selected', () => {
+    const result = run('target-payoff-beyond720');
+    expect(result.selectedCriterion).toBe('interestBelowRent');
+    expect(result.selectionStatus).toBe('available');
+    expect(result.selectedPlan.dealMonth).toBe(432);
+  });
+  it('reports an unavailable selected criterion without falling back to earliest', () => {
+    const result = run('target-strict-equality');
+    expect(result.selectionStatus).toBe('unavailable');
+    expect(result.selectedPlan).toBeNull();
+    expect(result.plans.earliest.dealMonth).toBe(0);
+    expect(result.selectionReason).toMatch(/[А-Яа-я]/);
+  });
+});
+
+describe('slice 10: buildCashflow projection', () => {
+  it('projects the ledger without replanning, for selected and unselected plans alike', () => {
+    const entry = fixtures['matrix-immediate-reserve'];
+    const result = model.calculate(entry.inputs, entry.repaymentMode, entry.renovation, entry.selectedCriterion);
+    for (const plan of [result.selectedPlan, result.plans.cash]) {
+      const flow = model.buildCashflow(plan);
+      expect(flow.dealMonth).toBe(plan.dealMonth);
+      expect(flow.moveMonth).toBe(plan.moveMonth);
+      expect(flow.rows.length).toBe(plan.ledger.length);
+      for (const [index, row] of flow.rows.entries()) {
+        expect(row.month).toBe(index);
+        for (const field of ['savings', 'rent', 'renovation', 'interest', 'principal', 'openingCash', 'cashAfterDeal', 'depositYield', 'budgetIncome', 'purchaseCapital', 'protectedReserveAfter', 'closingCash']) {
+          expect(row[field]).toBe(plan.ledger[index][field]);
+        }
+      }
+      const stack = (row) => row.savings + row.rent + row.renovation + row.interest + row.principal;
+      expect(flow.maximum).toBe(Math.max(1, ...flow.rows.map(stack)));
+      expect(flow.maximum).toBeGreaterThanOrEqual(1);
+    }
+  });
+  it('returns null for a null plan and never mutates the plan it projected', () => {
+    expect(model.buildCashflow(null)).toBeNull();
+    const entry = fixtures['matrix-zero-rates'];
+    const result = model.calculate(entry.inputs, entry.repaymentMode, entry.renovation, entry.selectedCriterion);
+    const before = structuredClone(result.selectedPlan);
+    const first = model.buildCashflow(result.selectedPlan);
+    const second = model.buildCashflow(result.selectedPlan);
+    expect(second).toEqual(first);
+    expect(result.selectedPlan).toEqual(before);
+  });
+});
+
+describe('slice 6: contractual amortization and L-limited totals', () => {
+  for (const id of ['matrix-no-renovation-long', 'target-interior-floor', 'rich-long', 'target-yield-reserve-nominal']) {
+    it(`retains cash and pays the original annuity: ${id}`, () => {
+      const plan = run(id).plans.earliest, golden = fixtures[id].expected.plans.earliest;
+      for (const [key, value] of Object.entries(golden.loan)) {
+        if (['repaymentMonths', 'lastPaymentRowMonth', 'lastPaymentBoundaryMonth'].includes(key)) expect(plan.loan[key]).toBe(value);
+        else moneyEqual(plan.loan[key], value, `${id}.loan.${key}`);
+      }
+      for (const [key, value] of Object.entries(golden.totals)) moneyEqual(plan.totals[key], value, `${id}.totals.${key}`);
+      expect(plan.ledger.every((row) => row.earlyRepayment === 0)).toBe(true);
+      expect(plan.ledger.length).toBe(Math.max(plan.loan.lastPaymentRowMonth, plan.moveMonth - 1) + 1);
+      for (const row of plan.ledger.filter((row) => row.openingLoanPrincipal > 0)) {
+        moneyEqual(row.contractualPayment, Math.min(plan.loan.contractualAnnuity, row.openingLoanPrincipal + row.interest));
+      }
+      expect(plan.ledger[plan.loan.lastPaymentRowMonth].closingLoanPrincipal).toBeLessThanOrEqual(0.01);
+    });
+  }
+});
+
+const ENTRY_IDS = Object.keys(fixtures);
+const PLAN_KEYS = ['earliest', 'interestBelowRent', 'cash'];
+const pad = (value) => String(value).padStart(2, '0');
+const isoDate = (referenceDate, months) => {
+  const date = addMonths(new Date(referenceDate + 'T00:00:00'), months);
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+};
+const compareRow = (actual, expectedRow, label) => {
+  expect(actual, label).not.toBeNull();
+  for (const [field, value] of Object.entries(expectedRow)) {
+    if (field === 'month') expect(actual[field], `${label}.month`).toBe(value);
+    else moneyEqual(actual[field], value, `${label}.${field}`);
+  }
+};
+const comparePlanSummary = (id, key, plan, golden, entry) => {
+  expect(plan.kind, `${id}.${key}.kind`).toBe(golden.kind);
+  expect(plan.dealMonth, `${id}.${key}.dealMonth`).toBe(golden.dealMonth);
+  expect(plan.moveMonth, `${id}.${key}.moveMonth`).toBe(golden.moveMonth);
+  expect(plan.workMonths, `${id}.${key}.workMonths`).toBe(golden.workMonths);
+  for (const field of ['propertyPriceAtDeal', 'renovationCostAtDeal', 'renovationMonthlyPayment', 'availableSavingsAtDeal', 'indexedRentAtDeal']) {
+    moneyEqual(plan[field], golden[field], `${id}.${key}.${field}`);
+  }
+  for (const [field, value] of Object.entries(golden.savingsGoal)) moneyEqual(plan.savingsGoal[field], value, `${id}.${key}.savingsGoal.${field}`);
+  if (golden.loan === null) expect(plan.loan, `${id}.${key}.loan`).toBeNull();
+  else {
+    expect(plan.loan, `${id}.${key}.loan`).not.toBeNull();
+    for (const [field, value] of Object.entries(golden.loan)) {
+      if (['repaymentMonths', 'lastPaymentRowMonth', 'lastPaymentBoundaryMonth'].includes(field)) expect(plan.loan[field], `${id}.${key}.loan.${field}`).toBe(value);
+      else moneyEqual(plan.loan[field], value, `${id}.${key}.loan.${field}`);
+    }
+  }
+  for (const [field, value] of Object.entries(golden.totals)) moneyEqual(plan.totals[field], value, `${id}.${key}.totals.${field}`);
+  expect(plan.calendarDates ?? {
+    dealDate: isoDate(entry.referenceDate, plan.dealMonth),
+    moveDate: isoDate(entry.referenceDate, plan.moveMonth),
+    lastPaymentDate: plan.loan ? isoDate(entry.referenceDate, plan.loan.lastPaymentBoundaryMonth) : null
+  }, `${id}.${key}.calendarDates`).toEqual(golden.calendarDates);
+  const indices = boundaryIndices(plan);
+  for (const [name, expectedRow] of Object.entries(golden.boundaryRows)) {
+    const index = indices[name];
+    const actual = index === null ? null : plan.ledger[index] ?? null;
+    if (expectedRow === null) { expect(actual, `${id}.${key}.boundaryRows.${name}`).toBeNull(); continue; }
+    compareRow(actual, expectedRow, `${id}.${key}.boundaryRows.${name}`);
+  }
+};
+
+describe('full sweep: every golden entry end to end', () => {
+  for (const id of ENTRY_IDS) {
+    it(`matches statuses, envelope, all three plans and the selected plan: ${id}`, () => {
+      const entry = fixtures[id];
+      const result = model.calculate(entry.inputs, entry.repaymentMode, entry.renovation, entry.selectedCriterion);
+      const golden = entry.expected;
+      expect(result.status, `${id}.status`).toBe(golden.statuses.status);
+      expect(result.validationErrors, `${id}.validationErrors`).toEqual(golden.statuses.validationErrors);
+      expect(result.selectedCriterion, `${id}.selectedCriterion`).toBe(golden.statuses.selectedCriterion);
+      expect(result.selectionStatus, `${id}.selectionStatus`).toBe(golden.statuses.selectionStatus);
+      if (golden.statuses.selectionReason === null) expect(result.selectionReason, `${id}.selectionReason`).toBeNull();
+      else {
+        expect(typeof result.selectionReason, `${id}.selectionReason`).toBe('string');
+        expect(result.selectionReason.length > 0 && /[А-Яа-я]/.test(result.selectionReason), `${id}.selectionReason`).toBe(true);
+      }
+      moneyEqual(result.monthlyBudget, golden.monthlyBudget, `${id}.monthlyBudget`);
+      moneyEqual(result.forecast.propertyInYear, golden.forecast.propertyInYear, `${id}.propertyInYear`);
+      moneyEqual(result.forecast.rentInYear, golden.forecast.rentInYear, `${id}.rentInYear`);
+      for (const key of PLAN_KEYS) {
+        const planGolden = golden.plans[key];
+        if (planGolden === null) { expect(result.plans[key], `${id}.plans.${key}`).toBeNull(); continue; }
+        comparePlanSummary(id, key, result.plans[key], planGolden, entry);
+      }
+      if (golden.selectedPlan === null) expect(result.selectedPlan, `${id}.selectedPlan`).toBeNull();
+      else {
+        expect(result.selectedPlan, `${id}.selectedPlanEcho`).toEqual(result.plans[result.selectedCriterion]);
+        comparePlanSummary(id, 'selected', result.selectedPlan, golden.selectedPlan, entry);
+      }
+      if (result.selectedPlan) {
+        const flow = model.buildCashflow(result.selectedPlan);
+        expect(flow.maximum, `${id}.cashflow.maximum`).toBeGreaterThanOrEqual(1);
+        expect(flow.rows.length, `${id}.cashflow.rows`).toBe(result.selectedPlan.ledger.length);
+      }
+    });
+  }
+});
+
+describe('invariants: every plan of every entry', () => {
+  const results = new Map(ENTRY_IDS.map((id) => {
+    const entry = fixtures[id];
+    return [id, model.calculate(entry.inputs, entry.repaymentMode, entry.renovation, entry.selectedCriterion)];
+  }));
+  for (const id of ENTRY_IDS) {
+    const entry = fixtures[id];
+    if (entry.expected.statuses.status !== 'ok') continue;
+    for (const key of PLAN_KEYS) {
+      if (entry.expected.plans[key] === null) continue;
+      it(`${id}/${key} closes every row and conserves every total`, () => {
+        const result = results.get(id);
+        const plan = result.plans[key];
+        const q = 1 + entry.inputs.depositRate / 100 / 12;
+        const growth = 1 + entry.inputs.inflation / 100;
+        const L = plan.loan ? Math.max(plan.loan.lastPaymentRowMonth, plan.moveMonth - 1) : Math.max(plan.dealMonth, plan.moveMonth - 1);
+        expect(plan.ledger.length, `${id}/${key} ledger length`).toBe(L + 1);
+        const sums = { rent: 0, renovation: 0, interest: 0, principal: 0, depositYield: 0, budgetIncome: 0, purchaseCapital: 0 };
+        for (const [index, row] of plan.ledger.entries()) {
+          moneyEqual(row.closingCash, row.openingCash - row.purchaseCapital + row.depositYield + row.budgetIncome - row.rent - row.renovation - row.interest - row.principal, `${id}/${key} row ${index} reconciliation`);
+          expect(row.closingCash, `${id}/${key} row ${index} nonnegative cash`).toBeGreaterThanOrEqual(-0.01);
+          moneyEqual(row.openingCash, index ? plan.ledger[index - 1].closingCash : entry.inputs.savings, `${id}/${key} row ${index} opening chain`);
+          moneyEqual(row.budgetIncome, result.monthlyBudget, `${id}/${key} row ${index} fixed budget`);
+          moneyEqual(row.depositYield, (q - 1) * row.cashAfterDeal, `${id}/${key} row ${index} yield`);
+          moneyEqual(row.savings, Math.max(0, row.budgetIncome - row.rent - row.renovation - row.interest - row.principal), `${id}/${key} row ${index} savings formula`);
+          const onWorkRow = index >= plan.dealMonth && index < plan.moveMonth;
+          if (onWorkRow) moneyEqual(row.renovation, plan.renovationMonthlyPayment, `${id}/${key} row ${index} work installment`);
+          else moneyEqual(row.renovation, 0, `${id}/${key} row ${index} no renovation off work`);
+          if (index < plan.dealMonth) moneyEqual(row.renovation, 0, `${id}/${key} row ${index} no renovation before deal`);
+          if (plan.loan && row.openingLoanPrincipal > 0.01) {
+            moneyEqual(row.contractualPayment, Math.min(plan.loan.contractualAnnuity, row.openingLoanPrincipal + row.interest), `${id}/${key} row ${index} full contractual payment`);
+            expect(row.closingLoanPrincipal, `${id}/${key} row ${index} nonnegative principal`).toBeGreaterThanOrEqual(-0.01);
+          }
+          if (entry.repaymentMode === 'fast' && plan.loan && row.closingLoanPrincipal > 0.01) {
+            expect(row.closingCash, `${id}/${key} row ${index} unprotected surplus`).toBeLessThanOrEqual(row.protectedReserveAfter + 0.01);
+          }
+          for (const field of Object.keys(sums)) sums[field] += row[field];
+        }
+        if (plan.loan) expect(plan.loan.repaymentMonths, `${id}/${key} payment opportunities`).toBeLessThanOrEqual(360);
+        else expect(sums.principal, `${id}/${key} zero principal`).toBeLessThanOrEqual(0.01);
+        for (const [field, value] of Object.entries(sums)) moneyEqual(plan.totals[field], value, `${id}/${key} totals.${field}`);
+        moneyEqual(plan.totals.finalCash, plan.ledger.at(-1).closingCash, `${id}/${key} totals.finalCash`);
+        moneyEqual(sums.renovation, plan.renovationCostAtDeal, `${id}/${key} renovation conservation`);
+        if (plan.loan) moneyEqual(sums.principal, plan.loan.principal, `${id}/${key} principal conservation`);
+        let prefix = 0;
+        for (let m = 0; m < plan.moveMonth; m += 1) prefix += entry.inputs.rent * Math.pow(growth, m / 12);
+        moneyEqual(sums.rent, prefix, `${id}/${key} rent prefix`);
+        moneyEqual(sums.rent, model.rentPaidUntilMonth(entry.inputs, plan.moveMonth), `${id}/${key} rentPaidUntilMonth cross-check`);
+        moneyEqual(plan.savingsGoal.renovationSavings + plan.savingsGoal.deficitReserve, plan.savingsGoal.totalReserve, `${id}/${key} reserve split`);
+        moneyEqual(plan.savingsGoal.totalRequiredSavings, plan.savingsGoal.actualDownPayment + plan.savingsGoal.cashPurchasePrice + plan.savingsGoal.totalReserve, `${id}/${key} goal total`);
+      });
+    }
+  }
+});
+
+describe('paymentForTerm and rentPaidUntilMonth units', () => {
+  it('paymentForTerm: zero principal is 0, zero rate is L/N', () => {
+    expect(model.paymentForTerm(0, 16.9, 360)).toBe(0);
+    expect(model.paymentForTerm(1200000, 0, 360)).toBeCloseTo(1200000 / 360, 6);
+    expect(model.paymentForTerm(500000, 0, 25)).toBeCloseTo(20000, 6);
+  });
+  it('paymentForTerm: standard annuity values from independent worked examples', () => {
+    moneyEqual(model.paymentForTerm(1000000, 12, 12), 88848.79);
+    moneyEqual(model.paymentForTerm(8000000, 16.9, 360), 113404.77);
+  });
+  it('rentPaidUntilMonth: zero rent, zero horizon, exact and indexed sums, ceiling', () => {
+    const zero = { rent: 0, inflation: 5 };
+    expect(model.rentPaidUntilMonth(zero, 12)).toBe(0);
+    expect(model.rentPaidUntilMonth({ rent: 7, inflation: 0 }, 0)).toBe(0);
+    expect(model.rentPaidUntilMonth({ rent: 7, inflation: 0 }, 5)).toBeCloseTo(35, 10);
+    moneyEqual(model.rentPaidUntilMonth({ rent: 80000, inflation: 5 }, 13), 1065806.20);
+    expect(model.rentPaidUntilMonth({ rent: 80000, inflation: 5 }, 2.5)).toBeCloseTo(model.rentPaidUntilMonth({ rent: 80000, inflation: 5 }, 3), 10);
+  });
+});
+
+describe('export surface: exactly the contract symbols', () => {
+  it('exports the ten contract names and no compatibility aliases', () => {
+    expect(Object.keys(model).sort()).toEqual([
+      'AFFORDABILITY_HORIZON_MONTHS', 'DEFAULTS', 'MAX_LOAN_MONTHS', 'NO_RENOVATION',
+      'RENOVATION_COST_SHARE', 'SIMULATION_HORIZON_MONTHS',
+      'buildCashflow', 'calculate', 'paymentForTerm', 'rentPaidUntilMonth'
+    ].sort());
+  });
+  it('keeps the contract constant values', () => {
+    expect(model.DEFAULTS).toEqual({ savings: 0, monthlySavings: 50000, mortgageRate: 16.9, propertyPrice: 10000000, downPaymentPercent: 20, inflation: 5, rent: 80000, depositRate: 11.5 });
+    expect(model.NO_RENOVATION).toEqual({ needed: false, cost: 0, months: 0 });
+    expect(model.RENOVATION_COST_SHARE).toBe(0.15);
+    expect(model.SIMULATION_HORIZON_MONTHS).toBe(720);
+    expect(model.AFFORDABILITY_HORIZON_MONTHS).toBe(360);
+    expect(model.MAX_LOAN_MONTHS).toBe(360);
   });
 });
