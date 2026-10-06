@@ -191,6 +191,21 @@ describe('slice 8: fast-mode protected early repayment', () => {
   });
 });
 
+describe('planned first loan payment (issue #17)', () => {
+  it('sums the deal-month contractual payment and early repayment in fast mode', () => {
+    const plan = model.calculate(model.DEFAULTS, 'fast').plans.earliest;
+    const dealRow = plan.ledger[plan.dealMonth];
+    expect(dealRow.earlyRepayment).toBeGreaterThan(0.01);
+    moneyEqual(plan.loan.firstMonthPlannedPayment, dealRow.contractualPayment + dealRow.earlyRepayment);
+    moneyEqual(plan.loan.firstMonthPlannedPayment, 153075.92);
+  });
+  it('equals the contractual annuity when the first month has no early repayment', () => {
+    const plan = model.calculate(model.DEFAULTS, 'long').plans.earliest;
+    expect(plan.ledger[plan.dealMonth].earlyRepayment).toBe(0);
+    moneyEqual(plan.loan.firstMonthPlannedPayment, plan.loan.contractualAnnuity);
+  });
+});
+
 describe('slice 9: interestBelowRent threshold search', () => {
   const cases = [
     ['matrix-threshold-base', 144], ['rich-fast', 118], ['target-payoff-beyond720', 432],

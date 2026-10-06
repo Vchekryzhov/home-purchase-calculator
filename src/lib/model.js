@@ -149,6 +149,7 @@ const fillLedger = (context, plan, fast) => {
   if (plan.loan) {
     const paymentRows = ledger.filter((row) => row.contractualPayment > 0);
     Object.assign(plan.loan, {
+      firstMonthPlannedPayment: ledger[dealMonth].contractualPayment + ledger[dealMonth].earlyRepayment,
       repaymentMonths: paymentRows.length,
       lastPaymentRowMonth: paymentRows.at(-1).month,
       lastPaymentBoundaryMonth: paymentRows.at(-1).month + 1,
