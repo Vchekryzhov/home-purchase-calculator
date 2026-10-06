@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import vue from '@vitejs/plugin-vue';
 
 export default defineConfig({
@@ -7,5 +7,15 @@ export default defineConfig({
   build: {
     cssCodeSplit: false,
     rollupOptions: { output: { manualChunks: undefined } },
+  },
+  test: {
+    environment: 'node',
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*'],
+      exclude: ['src/**/*.test.js', 'src/lib/model.characterization.json'],
+      reporter: ['text-summary', 'html', 'json-summary'],
+      thresholds: { lines: 80 },
+    },
   },
 });
