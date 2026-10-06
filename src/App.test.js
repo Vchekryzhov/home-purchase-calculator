@@ -55,7 +55,10 @@ describe('App: public UI through mounted component', () => {
     expect(norm(ddText(wrapper, 'Минимальный первоначальный взнос'))).toBe('2362799₽');
     expect(norm(ddText(wrapper, 'Фактический первоначальный взнос'))).toBe('2362799₽');
     expect(norm(ddText(wrapper, 'Сумма кредита'))).toBe('9451196₽');
-    expect(norm(ddText(wrapper, 'Обязательный платёж'))).toBe('133976₽/мес.');
+    expect(norm(ddText(wrapper, 'Минимальный платёж'))).toBe('133976₽/мес.');
+    expect(wrapper.find('dt span[aria-label="Про обязательный платёж"]').exists()).toBe(true);
+    expect(norm(ddText(wrapper, 'Планируемый платёж'))).toBe('от153076₽/мес.');
+    expect(wrapper.find('dt span[aria-label="Что значит планируемый платёж"]').exists()).toBe(true);
     expect(ddText(wrapper, 'Срок выплаты')).toBe('12 лет 2 месяца');
     expect(norm(ddText(wrapper, 'Переплата'))).toBe('13835985₽');
     expect(ddText(wrapper, 'Последний платёж')).toMatch(/^\d{1,2} [а-яё]+ \d{4} г\.$/);
@@ -86,10 +89,15 @@ describe('App: public UI through mounted component', () => {
     expect(fast.classes()).not.toContain('active');
     expect(ddText(wrapper, 'Срок выплаты')).toBe('30 лет');
     expect(norm(ddText(wrapper, 'Переплата'))).toBe('38780286₽');
+    expect(norm(ddText(wrapper, 'Обязательный платёж'))).toBe('133976₽/мес.');
+    expect(wrapper.find('dt span[aria-label="Про обязательный платёж"]').exists()).toBe(false);
+    expect(dd(wrapper, 'Планируемый платёж')).toBeNull();
     await fast.trigger('click');
     await settle();
     expect(fast.classes()).toContain('active');
     expect(ddText(wrapper, 'Срок выплаты')).toBe('12 лет 2 месяца');
+    expect(norm(ddText(wrapper, 'Минимальный платёж'))).toBe('133976₽/мес.');
+    expect(norm(ddText(wrapper, 'Планируемый платёж'))).toBe('от153076₽/мес.');
   });
 
   it('enables the renovation scenario with renovation savings, badges and chart marks', async () => {
@@ -149,7 +157,7 @@ describe('App: public UI through mounted component', () => {
     await labelInput(wrapper, 'Ставка кредита').setValue('12');
     await settle();
     expect(wrapper.find('article.card.mortgage .big').text()).toBe('3 года 5 месяцев');
-    expect(norm(ddText(wrapper, 'Обязательный платёж'))).toBe('97216₽/мес.');
+    expect(norm(ddText(wrapper, 'Минимальный платёж'))).toBe('97216₽/мес.');
     expect(norm(ddText(wrapper, 'Переплата'))).toBe('5731282₽');
   });
 
