@@ -304,7 +304,7 @@ Generate full ledgers only for the winners of the three searches — never for t
 
 - Удалите выбор «Накопить до / После покупки» и его availability-gating. Остаются needed, cost, months и режим погашения.
 - Новый независимый вход формы `salaryIndexPercent` («Процент индексации зарплаты», годовой процент): 5 при начальной загрузке и при сбросе формы, после этого полностью независим от коэффициента удорожания. `inflation` отображается как «Коэффициент удорожания недвижимости» и остаётся тем же ключом с прежним смыслом.
-- Карточка, график, отметки сделки/переезда и tooltip используют один `selectedPlan`. «Рассчитать покупку в эту дату» переключает на `interestBelowRent`; возврат — на `earliest`. Не сохраняйте дату вместо критерия.
+- Карточка, график, отметки сделки/переезда и tooltip используют один `selectedPlan`. UI всегда передаёт `selectedCriterion = 'earliest'`; карточка порога «Когда покупать» удалена (ревизия UI, 2026-10-06). Переключение критерия остаётся доступным на уровне расчётного контракта.
 - Показывайте минимум/фактический взнос, `renovationSavings`, `deficitReserve`, `totalRequiredSavings`, отдельный `optionalSurplus`, даты, кредит и totals. У cash показывайте цену покупки вместо фактического взноса.
 - Покажите: «Необходимые накопления на ремонт и резерв учтены в датах покупки и переезда».
 - Threshold search uses the same smallest-admissible down (no extra floor). Optional surplus never reduces first-month interest.
