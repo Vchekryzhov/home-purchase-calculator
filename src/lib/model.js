@@ -171,6 +171,11 @@ export const buildCashflow = (plan) => {
   return { rows, dealMonth: plan.dealMonth, moveMonth: plan.moveMonth, maximum };
 };
 
+// Long mode hides the savings segment from the deal month inclusive: what happens to
+// savings after the purchase is outside the calculator's scope. Null means "not drawn".
+export const maskSavingsAfterDeal = (values, dealMonth, hide) =>
+  hide ? values.map((value, month) => (month >= dealMonth ? null : value)) : [...values];
+
 export const calculate = (rawInputs, repaymentMode, renovation = NO_RENOVATION, selectedCriterion = 'earliest') => {
   const inputs = Object.fromEntries(Object.keys(DEFAULTS).map((key) => [key, number(rawInputs[key])]));
   const workMonths = renovation.needed ? Math.max(0, Math.round(Number(renovation.months) || 0)) : 0;
