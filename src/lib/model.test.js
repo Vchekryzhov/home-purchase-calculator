@@ -380,6 +380,7 @@ describe('invariants: every plan of every entry', () => {
         const plan = result.plans[key];
         const q = 1 + entry.inputs.depositRate / 100 / 12;
         const growth = 1 + entry.inputs.inflation / 100;
+        const salaryGrowth = 1 + (entry.inputs.salaryIndexPercent ?? 0) / 100;
         const L = plan.loan ? Math.max(plan.loan.lastPaymentRowMonth, plan.moveMonth - 1) : Math.max(plan.dealMonth, plan.moveMonth - 1);
         expect(plan.ledger.length, `${id}/${key} ledger length`).toBe(L + 1);
         const sums = { rent: 0, renovation: 0, interest: 0, principal: 0, depositYield: 0, budgetIncome: 0, purchaseCapital: 0 };
@@ -387,7 +388,7 @@ describe('invariants: every plan of every entry', () => {
           moneyEqual(row.closingCash, row.openingCash - row.purchaseCapital + row.depositYield + row.budgetIncome - row.rent - row.renovation - row.interest - row.principal, `${id}/${key} row ${index} reconciliation`);
           expect(row.closingCash, `${id}/${key} row ${index} nonnegative cash`).toBeGreaterThanOrEqual(-0.01);
           moneyEqual(row.openingCash, index ? plan.ledger[index - 1].closingCash : entry.inputs.savings, `${id}/${key} row ${index} opening chain`);
-          moneyEqual(row.budgetIncome, result.monthlyBudget, `${id}/${key} row ${index} fixed budget`);
+          moneyEqual(row.budgetIncome, entry.inputs.rent + entry.inputs.monthlySavings * Math.pow(salaryGrowth, index / 12), `${id}/${key} row ${index} indexed budget income`);
           moneyEqual(row.depositYield, (q - 1) * row.cashAfterDeal, `${id}/${key} row ${index} yield`);
           moneyEqual(row.savings, Math.max(0, row.budgetIncome - row.rent - row.renovation - row.interest - row.principal), `${id}/${key} row ${index} savings formula`);
           const onWorkRow = index >= plan.dealMonth && index < plan.moveMonth;
@@ -420,6 +421,126 @@ describe('invariants: every plan of every entry', () => {
   }
 });
 
+describe('salary indexing (issue #15): indexed monthly savings ability', () => {
+  const INDEXED = { savings: 0, monthlySavings: 10, mortgageRate: 0, propertyPrice: 1000, downPaymentPercent: 20, inflation: 0, rent: 5, depositRate: 0, salaryIndexPercent: 12 };
+  const incomeAt = (m) => INDEXED.rent + INDEXED.monthlySavings * Math.pow(1 + INDEXED.salaryIndexPercent / 100, m / 12);
+
+  it('reproduces the unindexed goldens exactly when salaryIndexPercent is explicitly 0', () => {
+    for (const id of ['matrix-no-renovation-long', 'matrix-immediate-reserve', 'matrix-zero-rates', 'matrix-threshold-base']) {
+      const entry = fixtures[id];
+      const result = model.calculate({ ...entry.inputs, salaryIndexPercent: 0 }, entry.repaymentMode, entry.renovation, entry.selectedCriterion);
+      const golden = entry.expected;
+      expect(result.status, `${id}.status`).toBe(golden.statuses.status);
+      moneyEqual(result.monthlyBudget, golden.monthlyBudget, `${id}.monthlyBudget`);
+      for (const key of PLAN_KEYS) {
+        const planGolden = golden.plans[key];
+        if (planGolden === null) { expect(result.plans[key], `${id}.${key}`).toBeNull(); continue; }
+        comparePlanSummary(id, key, result.plans[key], planGolden, entry);
+      }
+    }
+  });
+
+  it('keeps monthlyBudget as the today-price base and the envelope key set unchanged under indexing', () => {
+    const result = model.calculate(INDEXED, 'long');
+    expect(result.monthlyBudget).toBe(15);
+    expect(Object.keys(result).sort()).toEqual(['status', 'validationErrors', 'monthlyBudget', 'selectedCriterion', 'selectionStatus', 'selectionReason', 'plans', 'selectedPlan', 'forecast'].sort());
+  });
+
+  it('indexes every ledger row by the global month formula, growing smoothly across the deal without restarting m', () => {
+    const result = model.calculate(INDEXED, 'long');
+    const plan = result.plans.earliest;
+    expect(plan.dealMonth).toBeGreaterThan(0);
+    expect(plan.ledger.length).toBeGreaterThan(plan.dealMonth + 12);
+    for (const row of plan.ledger) {
+      moneyEqual(row.budgetIncome, incomeAt(row.month), `row ${row.month}.budgetIncome`);
+      if (row.month > 0) expect(row.budgetIncome, `row ${row.month} smooth growth`).toBeGreaterThan(plan.ledger[row.month - 1].budgetIncome);
+    }
+    const flow = model.buildCashflow(plan);
+    for (const [index, row] of flow.rows.entries()) expect(row.budgetIncome, `flow row ${index}`).toBe(plan.ledger[index].budgetIncome);
+  });
+
+  it('pins the deal months of a positive-index scenario to independently derived values', () => {
+    // Derivation (independent accumulation outside the engine; depositRate 0, inflation 0):
+    // net monthly contribution = income(m) - rent = 10·(1.12)^(m/12), so
+    // waiting(m) = Σ_{k<m} 10·(1.12)^(k/12). Earliest mortgage needs waiting ≥ 200 (the 20% minimum
+    // down payment; the annuity floor is negative because income·360 far exceeds the price, and the
+    // reserve is 0 since the zero-rate annuity 800/360 = 2.22 is below the contribution):
+    // waiting(18) = 195.279409 < 200 ≤ waiting(19) = 207.132375 → deal month 19 (month 20 without indexing).
+    // Cash purchase needs waiting ≥ 1000: waiting(70) = 987.365609 < 1000 ≤ waiting(71) = 1006.734517
+    // → deal month 71 (month 80 without indexing).
+    const result = model.calculate(INDEXED, 'fast');
+    expect(result.plans.earliest.dealMonth).toBe(19);
+    moneyEqual(result.plans.earliest.availableSavingsAtDeal, 207.132375);
+    expect(result.plans.cash.dealMonth).toBe(71);
+  });
+
+  it('sizes the down payment annuity floor with the indexed income at the deal month, not the constant budget', () => {
+    const inputs = { savings: 40, monthlySavings: 10, mortgageRate: 16.9, propertyPrice: 1000, downPaymentPercent: 0, inflation: 0, rent: 2, depositRate: 0, salaryIndexPercent: 12 };
+    // Derivation (independent arithmetic): unit 360-month annuity paymentForTerm(1, 16.9) = 0.0141755967.
+    // Income at month 7 is 2 + 10·(1.12)^(7/12) = 12.683425, so the indexed floor is
+    // 1000 − 12.683425/0.0141755967 = 105.263398, while the constant-budget floor would be
+    // 1000 − 12/0.0141755967 = 153.474786. Waiting(6) = 101.437246 < down(6) = 112.347399 and
+    // waiting(7) = 112.024460 ≥ down(7) = 105.263398 with zero reserve, so the earliest deal is month 7
+    // and must carry the indexed floor.
+    const result = model.calculate(inputs, 'long');
+    const plan = result.plans.earliest;
+    expect(plan.dealMonth).toBe(7);
+    const indexedFloor = 1000 - (2 + 10 * Math.pow(1.12, 7 / 12)) / model.paymentForTerm(1, 16.9);
+    const constantFloor = 1000 - 12 / model.paymentForTerm(1, 16.9);
+    moneyEqual(plan.savingsGoal.actualDownPayment, indexedFloor);
+    moneyEqual(plan.loan.contractualAnnuity, 2 + 10 * Math.pow(1.12, 7 / 12));
+    expect(Math.abs(constantFloor - indexedFloor)).toBeGreaterThan(1);
+  });
+
+  it('preserves the exact reserve split and keeps mandatory payments feasible against the indexed income sequence', () => {
+    const entry = fixtures['index-renovation-fast'];
+    const plan = model.calculate(entry.inputs, entry.repaymentMode, entry.renovation, entry.selectedCriterion).plans.earliest;
+    moneyEqual(plan.savingsGoal.renovationSavings + plan.savingsGoal.deficitReserve, plan.savingsGoal.totalReserve);
+    expect(plan.savingsGoal.totalReserve).toBeGreaterThan(0);
+    for (const row of plan.ledger) expect(row.closingCash, `row ${row.month} feasible against indexed incomes`).toBeGreaterThanOrEqual(-0.01);
+    const constantBudgetSibling = fixtures['matrix-immediate-reserve'].expected.plans.earliest.savingsGoal;
+    expect(plan.savingsGoal.deficitReserve).toBeGreaterThan(0);
+    expect(plan.savingsGoal.deficitReserve).toBeLessThan(constantBudgetSibling.deficitReserve);
+  });
+
+  it('never lets protected early repayment break mandatory payments under indexing', () => {
+    const entry = fixtures['index-basic-fast'];
+    const plan = model.calculate(entry.inputs, entry.repaymentMode, entry.renovation, entry.selectedCriterion).plans.earliest;
+    for (const row of plan.ledger) {
+      if (row.openingLoanPrincipal > 0.01) moneyEqual(row.contractualPayment, Math.min(plan.loan.contractualAnnuity, row.openingLoanPrincipal + row.interest), `row ${row.month} full contractual payment`);
+      if (row.closingLoanPrincipal > 0.01) expect(row.closingCash, `row ${row.month} unprotected surplus spent`).toBeLessThanOrEqual(row.protectedReserveAfter + 0.01);
+      expect(row.closingCash, `row ${row.month} nonnegative cash`).toBeGreaterThanOrEqual(-0.01);
+    }
+    expect(plan.loan.repaymentMonths).toBeLessThanOrEqual(360);
+  });
+
+  it('keeps the full 360-month contractual schedule without missed or capitalized payments under indexing', () => {
+    const plan = model.calculate(INDEXED, 'long').plans.earliest;
+    expect(plan.loan.repaymentMonths).toBe(360);
+    expect(plan.loan.lastPaymentRowMonth).toBe(plan.dealMonth + 359);
+    expect(plan.loan.lastPaymentBoundaryMonth).toBe(plan.dealMonth + 360);
+    for (const row of plan.ledger.filter((r) => r.openingLoanPrincipal > 0.01)) {
+      moneyEqual(row.contractualPayment, Math.min(plan.loan.contractualAnnuity, row.openingLoanPrincipal + row.interest), `row ${row.month}`);
+      expect(row.closingLoanPrincipal, `row ${row.month} no capitalization`).toBeGreaterThanOrEqual(-0.01);
+    }
+  });
+
+  it('reconciles indexed incomes, expenses and cash on every row of every plan', () => {
+    const result = model.calculate(INDEXED, 'fast');
+    for (const plan of [result.plans.earliest, result.plans.cash]) {
+      let previous = INDEXED.savings, incomeTotal = 0;
+      for (const row of plan.ledger) {
+        moneyEqual(row.openingCash, previous, `row ${row.month} opening chain`);
+        moneyEqual(row.closingCash, row.openingCash - row.purchaseCapital + row.depositYield + row.budgetIncome - row.rent - row.renovation - row.interest - row.principal, `row ${row.month} reconciliation`);
+        moneyEqual(row.budgetIncome, incomeAt(row.month), `row ${row.month} income formula`);
+        incomeTotal += row.budgetIncome;
+        previous = row.closingCash;
+      }
+      moneyEqual(plan.totals.budgetIncome, incomeTotal, 'totals.budgetIncome');
+    }
+  });
+});
+
 describe('paymentForTerm and rentPaidUntilMonth units', () => {
   it('paymentForTerm: zero principal is 0, zero rate is L/N', () => {
     expect(model.paymentForTerm(0, 16.9, 360)).toBe(0);
@@ -449,7 +570,7 @@ describe('export surface: exactly the contract symbols', () => {
     ].sort());
   });
   it('keeps the contract constant values', () => {
-    expect(model.DEFAULTS).toEqual({ savings: 0, monthlySavings: 50000, mortgageRate: 16.9, propertyPrice: 10000000, downPaymentPercent: 20, inflation: 5, rent: 80000, depositRate: 11.5 });
+    expect(model.DEFAULTS).toEqual({ savings: 0, monthlySavings: 50000, mortgageRate: 16.9, propertyPrice: 10000000, downPaymentPercent: 20, inflation: 5, rent: 80000, depositRate: 11.5, salaryIndexPercent: 5 });
     expect(model.NO_RENOVATION).toEqual({ needed: false, cost: 0, months: 0 });
     expect(model.RENOVATION_COST_SHARE).toBe(0.15);
     expect(model.SIMULATION_HORIZON_MONTHS).toBe(720);

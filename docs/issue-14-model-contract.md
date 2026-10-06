@@ -1,5 +1,7 @@
 # Issue #14: binding model contract
 
+> **Ревизия по issue #15 (2026-10-06).** Добавлен независимый вход `salaryIndexPercent` («Процент индексации зарплаты», годовой процент, по умолчанию 5 — при начальной загрузке и при сбросе формы): он индексирует только ежемесячную способность откладывать, `M(m) = M0 × (1 + salaryIndexPercent/100)^(m/12)`. Из решений #14 пересмотрено ровно одно — фиксированность номинального месячного бюджета, и только в части индексируемых накоплений; аренда как расход, цена жилья, стоимость ремонта и доходность вклада сохраняют прежние механизмы, остальные решения #14 действуют без изменений. При `salaryIndexPercent = 0` модель в точности воспроизводит прежнее поведение. MCP-интерфейс (`configure_home_purchase_calculator`) выставляет `salaryIndexPercent` отдельным параметром с тем же смыслом и начальным значением 5. README обновлён синхронно.
+
 ## Resolved decisions
 
 Все восемь решений утверждены и включены в нормативные разделы ниже:
@@ -15,7 +17,7 @@
 
 ## Назначение и источники
 
-Контракт заменяет старую двухрежимную модель ремонта в `src/lib/model.js`, её использование в `src/App.vue` и старые ожидания `src/lib/model.test.js`/`model.characterization.json`. README пока описывает прежнюю модель и не является источником новой семантики. Независимая проверка: [issue-14-verification.md](issue-14-verification.md).
+Контракт заменяет старую двухрежимную модель ремонта в `src/lib/model.js`, её использование в `src/App.vue` и старые ожидания `src/lib/model.test.js`/`model.characterization.json`. README обновлён синхронно с ревизией issue #15 (см. заметку вверху); нормативным источником семантики остаётся этот контракт. Независимая проверка: [issue-14-verification.md](issue-14-verification.md).
 
 ## Public interface
 
@@ -35,13 +37,13 @@ paymentForTerm(principal, annualRate, months = MAX_LOAN_MONTHS)
 rentPaidUntilMonth(rawInputs, month)
 ```
 
-`rawInputs` использует поля `savings`, `monthlySavings`, `mortgageRate`, `propertyPrice`, `downPaymentPercent`, `inflation`, `rent`, `depositRate`. Сохраните `DEFAULTS`: соответственно 0, 50000, 16.9, 10000000, 20, 5, 80000, 11.5.
+`rawInputs` использует поля `savings`, `monthlySavings`, `mortgageRate`, `propertyPrice`, `downPaymentPercent`, `inflation`, `rent`, `depositRate`, `salaryIndexPercent`. Сохраните `DEFAULTS`: соответственно 0, 50000, 16.9, 10000000, 20, 5, 80000, 11.5, 5. `salaryIndexPercent` — годовой процент индексации способности откладывать (см. Indexing & accumulation); он полностью независим от `inflation` и меняется только явным вводом. MCP-интерфейс (`configure_home_purchase_calculator`) выставляет `salaryIndexPercent` отдельным параметром с тем же смыслом и начальным значением 5.
 
 Ремонт: только `{ needed, cost, months }`. Остаточное свойство `funding` игнорируйте без ветвления. `buildCashflow(plan)` принимает рассчитанный план: NEVER replans or re-searches. Модель никогда не вызывает `new Date()`; календарные даты — ответственность UI/проверки при явно заданной опорной дате.
 
 ### Input normalization & validation
 
-Нормализуйте каждое из восьми числовых полей `rawInputs` через `Math.max(0, Number(x) || 0)`. Стоимость ремонта нормализуйте тем же числовым преобразованием; `renovation.months` — через `Math.max(0, Math.round(months))`.
+Нормализуйте каждое из девяти числовых полей `rawInputs` через `Math.max(0, Number(x) || 0)`. Стоимость ремонта нормализуйте тем же числовым преобразованием; `renovation.months` — через `Math.max(0, Math.round(months))`.
 
 Случаи `invalid-input` исчерпывающе заданы следующими условиями и точными UI-facing строками в `validationErrors`:
 
@@ -126,7 +128,7 @@ MonthlyRow = {
 }
 ```
 
-Все перечисленные row-поля обязательны минимум; денежные поля — числа. `month` — абсолютный индекс строки. `purchaseCapital` ненулевой только на строке сделки: фактический взнос либо полная cash-цена. `cashAfterDeal = openingCash - purchaseCapital`; `depositYield = (q - 1) * cashAfterDeal`; `budgetIncome = B`. `principal` включает договорное и досрочное погашение, но не первоначальный взнос. `contractualPayment = interest + principal - earlyRepayment`. `closingLoanPrincipal = openingLoanPrincipal - principal`. До сделки кредитные поля нулевые; у cash они всегда нулевые.
+Все перечисленные row-поля обязательны минимум; денежные поля — числа. `month` — абсолютный индекс строки. `purchaseCapital` ненулевой только на строке сделки: фактический взнос либо полная cash-цена. `cashAfterDeal = openingCash - purchaseCapital`; `depositYield = (q - 1) * cashAfterDeal`; `budgetIncome = today's rent + M(m)` для месяца строки `m`. `principal` включает договорное и досрочное погашение, но не первоначальный взнос. `contractualPayment = interest + principal - earlyRepayment`. `closingLoanPrincipal = openingLoanPrincipal - principal`. До сделки кредитные поля нулевые; у cash они всегда нулевые.
 
 Row reconciliation (MUST hold to documented epsilon):
 
@@ -151,7 +153,7 @@ Totals (включая `finalCash`, `depositYield`, `budgetIncome`) относя
   dealMonth, moveMonth, maximum }
 ```
 
-Проецируйте ledger без новой финансовой симуляции. Для tooltip сохраните поля наличных, доходности, операции сделки, защищённого резерва и источников оплаты. `maximum` учитывает реальный максимальный стек `savings + rent + renovation + interest + principal` (как в существующем графике, нижняя граница 1), а не ограничивается `B`. Отсутствующий `selectedPlan` обрабатывайте в UI как empty state, не передавайте другой план автоматически.
+Проецируйте ledger без новой финансовой симуляции. Для tooltip сохраните поля наличных, доходности, операции сделки, защищённого резерва и источников оплаты. `maximum` учитывает реальный максимальный стек `savings + rent + renovation + interest + principal` (как в существующем графике, нижняя граница 1), а не ограничивается месячным доходом. Отсутствующий `selectedPlan` обрабатывайте в UI как empty state, не передавайте другой план автоматически.
 
 Chart-поле из ACTUAL row flows:
 
@@ -159,22 +161,29 @@ Chart-поле из ACTUAL row flows:
 savings = max(0, budgetIncome − rent − renovation − interest − principal)
 ```
 
-Это удержанная часть бюджета, не stock balance. В fast излишек направляется на early repayment (внутри `principal`), поэтому такие строки показывают `savings = 0`; в long излишек накапливается и отображается как savings. До сделки поле показывает `B − indexedRent`, либо 0 при indexed rent ≥ B; превышение аренды в таком месяце — видимое списание наличных. Deposit yield NEVER appears in `savings`. Expense stacks are never clamped to keep the total within B.
+Это удержанная часть дохода месяца, не stock balance. В fast излишек направляется на early repayment (внутри `principal`), поэтому такие строки показывают `savings = 0`; в long излишек накапливается и отображается как savings. До сделки поле показывает `budgetIncome(m) − rent(m)`, либо 0 при `rent(m) ≥ budgetIncome(m)`; превышение аренды в таком месяце — видимое списание наличных. Deposit yield NEVER appears in `savings`. Expense stacks are never clamped to keep the total within `budgetIncome(m)`.
 
 ## Indexing & accumulation
 
 ```text
-B = today's monthlySavings + today's rent (FIXED nominal budget)
+B = today's monthlySavings + today's rent (today's-prices base; display, NOT a varying income)
 g = 1 + inflation/100
 q = 1 + depositRate/100/12
+M0 = today's monthlySavings
+M(m) = M0 × (1 + salaryIndexPercent/100)^(m/12)
+budgetIncome(m) = today's rent + M(m)
 price(d) = propertyPrice × g^(d/12)
 rent(m) = rent × g^(m/12)
 reno(d) = renovationCost × g^(d/12)
 S(0) = savings
-S(m+1) = q·S(m) + B − rent(m)
+S(m+1) = q·S(m) + budgetIncome(m) − rent(m)
 ```
 
-`availableSavingsAtDeal = S(d)`. Проверяйте сделку на границе до дохода/расходов строки `d`. Отрицательная saving capacity при `rent(m) > B` — реальное списание наличных; never clamp to zero. Если продолжение аренды исчерпывает наличные и на этой границе нет выполнимой сделки, более поздние месяцы ожидания недостижимы. Ровно нулевой остаток сам по себе не равен отрицательному остатку.
+`monthlyBudget` в результате сохраняет прежний смысл: база `B` в сегодняшних ценах — отображаемая величина, а не меняющийся доход. Доход каждой ledger-строки — `budgetIncome(m)`: сегодняшняя аренда (постоянная неиндексируемая часть дохода) плюс `M(m)`. Индексация накоплений плавная помесячная; `m` отсчитывается от начала сценария и НЕ сбрасывается сделкой — после покупки доход продолжает расти по той же формуле. Индексируется только способность откладывать: расход аренды до переезда индексируется коэффициентом `g`, цена жилья, стоимость ремонта и доходность вклада сохраняют собственные механизмы.
+
+Проиндексированная способность проходит через всю цепочку расчёта: накопление до сделки, выполнимость сделки и её месяц, выбор взноса, месячный `budgetIncome`, расчёт и расход резерва, защищённое досрочное погашение, ledger и график. При `salaryIndexPercent = 0` получается `M(m) = M0` и `budgetIncome(m) = B` — точное воспроизведение прежнего фиксированного номинального поведения.
+
+`availableSavingsAtDeal = S(d)`. Проверяйте сделку на границе до дохода/расходов строки `d`. Отрицательная saving capacity при `rent(m) > budgetIncome(m)` — реальное списание наличных; never clamp to zero. Если продолжение аренды исчерпывает наличные и на этой границе нет выполнимой сделки, более поздние месяцы ожидания недостижимы. Ровно нулевой остаток сам по себе не равен отрицательному остатку.
 
 Ремонт выключен: cost 0, work duration 0. Ремонт включён: сохраните введённый срок даже при нулевой стоимости. Положительная стоимость с нормализованным сроком 0 даёт явный `invalid-input`. При `w > 0` платёж равен `reno(d)/w`; без ремонта равен 0.
 
@@ -185,22 +194,24 @@ S(m+1) = q·S(m) + B − rent(m)
 ```text
 a = paymentForTerm(1, mortgageRate, 360)
 minimumDown = P × downPaymentPercent/100
-annuityFloorDown = max(0, P − B/a)
+annuityFloorDown = max(0, P − budgetIncome(d)/a)
 actualDown = max(minimumDown, annuityFloorDown)
 principal = P − actualDown
 require 0 ≤ actualDown ≤ P
 availableSavings(d) ≥ actualDown(d) + requiredReserve(d)
 ```
 
+Нижняя граница взноса от аннуитета использует проиндексированный бюджет ровно границы сделки: `budgetIncome(d) = today's rent + M(d)`. Выполнимость сделки не сводится к сравнению платежа с доходом на дату сделки: полную выполнимость обязательных платежей обеспечивает последовательность месячных доходов плюс резерв.
+
 `paymentForTerm(L, rate, N)` при `r = rate/100/12` равен `L*r/(1-(1+r)^(-N))`, при нулевой ставке `L/N`, при нулевом теле 0. `contractualAnnuity = paymentForTerm(principal, mortgageRate, 360)`; `firstMonthInterest = principal*r` до любых выплат строки сделки.
 
-Используйте полную точность, без валютной сетки и округления вниз, которое сделает аннуитет выше `B`. NEVER increase the down merely because more cash is available; extra cash is optionalSurplus. Порог не вводит собственный floor взноса. Излишек не уменьшает проценты первого месяца: fast-mode repayment happens after that row's contractual payment.
+Используйте полную точность, без валютной сетки и округления вниз, которое сделает аннуитет выше `budgetIncome(d)`. NEVER increase the down merely because more cash is available; extra cash is optionalSurplus. Порог не вводит собственный floor взноса. Излишек не уменьшает проценты первого месяца: fast-mode repayment happens after that row's contractual payment.
 
 Указанный в issue диапазон допустимых взносов реализуется единственным smallest-admissible allocation — максимумом двух floors. Оптимизацию диапазона не реализуйте.
 
 ## Monthly ordering
 
-Каждая строка выполняет строго: (1) deal operation if row d; (2) deposit yield on cash after deal op; (3) budget income B; (4) indexed rent if month < moveMonth; (5) FULL contractual mortgage payment due; (6) equal renovation installment if d ≤ month < d+w; (7) fast-mode protected early repayment; (8) record balances + remaining protected reserve.
+Каждая строка выполняет строго: (1) deal operation if row d; (2) deposit yield on cash after deal op; (3) budget income `budgetIncome(m)` = today's rent + M(m); (4) indexed rent if month < moveMonth; (5) FULL contractual mortgage payment due; (6) equal renovation installment if d ≤ month < d+w; (7) fast-mode protected early repayment; (8) record balances + remaining protected reserve.
 
 Работы: строки `d…d+w−1`. Переезд: граница `d+w`; аренда прекращается после строки `d+w−1`. Первый ипотечный платёж — в конце строки `d`. При `n` платежах:
 
@@ -213,15 +224,16 @@ lastPaymentBoundaryMonth = d+n
 
 ## Minimal initial reserve
 
-`t = 0` соответствует строке сделки. Постройте обязательный график `E_t`: договорная ипотека (включая уменьшенный последний платёж), индексированная аренда до переезда, равные платежи ремонта; NO discretionary repayment. За пределами обязательного графика будущий необходимый резерв равен 0.
+`t = 0` соответствует строке сделки; доход строки `t` — `I_t = budgetIncome(d + t) = today's rent + M(d + t)`. Постройте обязательный график `E_t`: договорная ипотека (включая уменьшенный последний платёж), индексированная аренда до переезда, равные платежи ремонта; NO discretionary repayment. За пределами обязательного графика будущий необходимый резерв равен 0.
 
 ```text
-C(t+1) = q·C(t) + B − E_t
-requiredInitialReserve = max(0, max over prefixes k of Σ[t=0…k] (E_t − B)/q^(t+1))
-requiredBeforeRow(t) = max(0, (E_t − B + requiredBeforeRow(t+1))/q)
+I_t = budgetIncome(d + t) = today's rent + M(d + t)
+C(t+1) = q·C(t) + I_t − E_t
+requiredInitialReserve = max(0, max over prefixes k of Σ[t=0…k] (E_t − I_t)/q^(t+1))
+requiredBeforeRow(t) = max(0, (E_t − I_t + requiredBeforeRow(t+1))/q)
 ```
 
-Последняя формула — эквивалентный обратный проход для запросов защиты и независимой сверки. Начальные деньги после операции покупки должны покрывать `requiredInitialReserve`. Ранние излишки покрывают поздний дефицит. Summing isolated monthly shortfalls is WRONG in general.
+Последняя формула — эквивалентный обратный проход для запросов защиты и независимой сверки. Начальные деньги после операции покупки должны покрывать `requiredInitialReserve`. Ранние излишки покрывают поздний дефицит; резерв обеспечен последовательностью месячных доходов, а не константой. Summing isolated monthly shortfalls is WRONG in general.
 
 ### Exact reserve split
 
@@ -239,14 +251,14 @@ renovationSavings + deficitReserve = totalReserve exactly
 ### Monthly source reporting: display only
 
 ```text
-baseExcess = max(0, rent + contractualPayment − B)
-freeIncome = max(0, B − rent − contractualPayment)
+baseExcess = max(0, rent + contractualPayment − budgetIncome(m))
+freeIncome = max(0, budgetIncome(m) − rent − contractualPayment)
 renovationFromIncome = min(renovationPayment, freeIncome)
 renovationFromCash = renovationPayment − renovationFromIncome
 nonRenovationFromCash = baseExcess
 ```
 
-Это номинальное распределение месячных обязательств для отображения, не разбиение начального резерва. Доход вклада принадлежит учёту наличных и никогда не увеличивает `B`. Фактическое изменение cash также учитывает yield, удержанный доход и early repayment; его нельзя заменять суммой этих display-полей. Резерв — запас на старте, расходы — потоки, списание запаса — не новый доход. `purchaseCapital` — конверсия накопленного капитала в жильё, не расход текущего месячного бюджета.
+Это номинальное распределение месячных обязательств для отображения, не разбиение начального резерва. Доход вклада принадлежит учёту наличных и никогда не увеличивает `budgetIncome`. Фактическое изменение cash также учитывает yield, удержанный доход и early repayment; его нельзя заменять суммой этих display-полей. Резерв — запас на старте, расходы — потоки, списание запаса — не новый доход. `purchaseCapital` — конверсия накопленного капитала в жильё, не расход текущего месячного бюджета.
 
 ## Fast and long repayment
 
@@ -260,7 +272,7 @@ Fast после обязательных платежей строки:
 4. Продолжайте, пока уменьшение тела освобождает ещё незащищённые деньги.
 5. Завершите без material unprotected surplus, если кредит не закрыт.
 
-`protectedReserveAfter` показывает защиту оставшегося графика после досрочного погашения. Silent iteration cap, оставляющий существенный излишек, запрещён. Исходный аннуитет неизменен до закрытия; последний платёж может быть меньше. Nothing skipped or capitalized; ≤ 360 contractual payment opportunities. Остатки cash/тела неотрицательны в пределах документированного денежного epsilon 0.01 ₽; этот допуск не разрешает изменить месяц выплаты или строгий порог.
+`protectedReserveAfter` показывает защиту оставшегося графика после досрочного погашения. Индексация зарплаты не ослабляет защиту: пересчёт использует ту же последовательность `budgetIncome`, и досрочное погашение не тратит деньги, защищённые под обязательные платежи. Silent iteration cap, оставляющий существенный излишек, запрещён. Исходный аннуитет неизменен до закрытия; последний платёж может быть меньше. Nothing skipped or capitalized; ≤ 360 contractual payment opportunities. Остатки cash/тела неотрицательны в пределах документированного денежного epsilon 0.01 ₽; этот допуск не разрешает изменить месяц выплаты или строгий порог.
 
 Long: досрочных платежей нет; свободные деньги сохраняются и получают месячную доходность.
 
@@ -291,11 +303,12 @@ Generate full ledgers only for the winners of the three searches — never for t
 ## UI contract and consequences
 
 - Удалите выбор «Накопить до / После покупки» и его availability-gating. Остаются needed, cost, months и режим погашения.
+- Новый независимый вход формы `salaryIndexPercent` («Процент индексации зарплаты», годовой процент): 5 при начальной загрузке и при сбросе формы, после этого полностью независим от коэффициента удорожания. `inflation` отображается как «Коэффициент удорожания недвижимости» и остаётся тем же ключом с прежним смыслом.
 - Карточка, график, отметки сделки/переезда и tooltip используют один `selectedPlan`. «Рассчитать покупку в эту дату» переключает на `interestBelowRent`; возврат — на `earliest`. Не сохраняйте дату вместо критерия.
 - Показывайте минимум/фактический взнос, `renovationSavings`, `deficitReserve`, `totalRequiredSavings`, отдельный `optionalSurplus`, даты, кредит и totals. У cash показывайте цену покупки вместо фактического взноса.
 - Покажите: «Необходимые накопления на ремонт и резерв учтены в датах покупки и переезда».
 - Threshold search uses the same smallest-admissible down (no extra floor). Optional surplus never reduces first-month interest.
-- Chart may exceed the fixed budget in reserve-funded months and must not hide it. Не масштабируйте/обрезайте реальные платежи до `B`; объясняйте резерв и cash movements в tooltip. Ремонт не отображается до сделки и не превращается в lump sum на сделке.
+- Chart may exceed the month's income in reserve-funded months and must not hide it. Не масштабируйте/обрезайте реальные платежи до месячного дохода; объясняйте резерв и cash movements в tooltip. Ремонт не отображается до сделки и не превращается в lump sum на сделке.
 - Календарь получает внешнюю опорную дату. Месяцы сделки, переезда и последнего платёжного boundary абсолютны. Не объявляйте выплату после 720 «недостижимой» только из-за горизонта поиска.
 
 ## Delete/migrate table
@@ -316,4 +329,4 @@ Generate full ledgers only for the winners of the three searches — never for t
 | Delete | isMortgagePaymentTooLow | Статусы нового результата |
 | Delete | isPostPurchaseAvailable | Удалить гейтинг |
 
-No compatibility aliases. Мигрируйте вызывающий код и тесты, не сохраняйте старые поля/снимки ради совместимости. Вне scope: рост бюджета, минимизация суммарных затрат, рефинансирование, налоги, persistence.
+No compatibility aliases. Мигрируйте вызывающий код и тесты, не сохраняйте старые поля/снимки ради совместимости. Вне scope: прочий рост бюджета кроме индексации накопительной части (issue #15), минимизация суммарных затрат, рефинансирование, налоги, persistence.
