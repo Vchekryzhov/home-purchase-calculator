@@ -50,7 +50,7 @@ describe('App: public UI through mounted component', () => {
     await settle();
     const mortgage = wrapper.find('article.card.mortgage');
     expect(mortgage.find('.kicker').text()).toBe('Ипотека');
-    expect(mortgage.find('.big-label').text()).toBe('Дата покупки');
+    expect(mortgage.find('.big-label').text()).toBe('Покупка возможна через');
     expect(mortgage.find('.big').text()).toBe('3 года 5 месяцев');
     expect(norm(ddText(wrapper, 'Минимальный первоначальный взнос'))).toBe('2362799₽');
     expect(norm(ddText(wrapper, 'Фактический первоначальный взнос'))).toBe('2362799₽');
@@ -59,7 +59,7 @@ describe('App: public UI through mounted component', () => {
     expect(ddText(wrapper, 'Срок выплаты')).toBe('12 лет 2 месяца');
     expect(norm(ddText(wrapper, 'Переплата'))).toBe('13835985₽');
     expect(ddText(wrapper, 'Последний платёж')).toMatch(/^\d{1,2} [а-яё]+ \d{4} г\.$/);
-    expect(norm(ddText(wrapper, 'Необязательный излишек'))).toBe('13873₽');
+    expect(dd(wrapper, 'Необязательный излишек')).toBeNull();
     const cash = wrapper.find('article.card.cash');
     expect(cash.find('.big-label').text()).toBe('Сможете купить через');
     expect(cash.find('.big').text()).toBe('16 лет 2 месяца');
@@ -136,7 +136,7 @@ describe('App: public UI through mounted component', () => {
     expect(wrapper.find('article.card.mortgage .big').text()).toBe('0 месяцев');
     expect(norm(ddText(wrapper, 'Фактический первоначальный взнос'))).toBe('2000000₽');
     expect(norm(ddText(wrapper, 'Всего необходимых накоплений'))).toBe('2000000₽');
-    expect(norm(ddText(wrapper, 'Необязательный излишек'))).toBe('4000000₽');
+    expect(dd(wrapper, 'Необязательный излишек')).toBeNull();
     const savings = amountInput(wrapper, 'Текущие накопления');
     await savings.trigger('focus');
     await savings.setValue('12abc34');

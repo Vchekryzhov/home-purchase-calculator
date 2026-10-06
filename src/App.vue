@@ -1,6 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
-import { DEFAULTS, RENOVATION_COST_SHARE, calculate, buildCashflow } from './lib/model.js';
+import { DEFAULTS, RENOVATION_COST_SHARE, calculate, buildCashflow, maskSavingsAfterDeal } from './lib/model.js';
 import * as echarts from 'echarts/core';
 import { BarChart } from 'echarts/charts';
 import { DataZoomComponent, GridComponent, MarkLineComponent, TooltipComponent } from 'echarts/components';
@@ -102,14 +102,17 @@ const MONTHS_FULL = ['январь', 'февраль', 'март', 'апрель
 const formatMonthYear = (month) => { const date = addMonths(referenceDate.value, month); return `${MONTHS_FULL[date.getMonth()]} ${date.getFullYear()}`; };
 const buildCashflowOption = (data) => {
   const categories = data.rows.map((row) => { const date = addMonths(referenceDate.value, row.month); return `${MONTHS_SHORT[date.getMonth()]} ${String(date.getFullYear()).slice(2)}`; });
-  const series = CASHFLOW_SEGMENTS.map((segment) => ({
-    name: segment.label,
-    type: 'bar',
-    stack: 'month',
-    barMaxWidth: 34,
-    itemStyle: { color: segment.color },
-    data: data.rows.map((row) => Math.round(segment.pick(row)))
-  }));
+  const series = CASHFLOW_SEGMENTS.map((segment) => {
+    const values = data.rows.map((row) => Math.round(segment.pick(row)));
+    return {
+      name: segment.label,
+      type: 'bar',
+      stack: 'month',
+      barMaxWidth: 34,
+      itemStyle: { color: segment.color },
+      data: segment.key === 'savings' ? maskSavingsAfterDeal(values, data.dealMonth, repaymentMode.value === 'long') : values
+    };
+  });
   const marks = [];
   if (data.dealMonth > 0) marks.push({ xAxis: data.dealMonth, label: { show: false }, lineStyle: { color: '#334155', type: 'dashed', width: 1.5 } });
   if (data.moveMonth > data.dealMonth) marks.push({ xAxis: data.moveMonth, label: { show: false }, lineStyle: { color: '#334155', type: 'dashed', width: 1.5 } });
@@ -186,7 +189,7 @@ onMounted(() => { const context = document.modelContext; if (!context?.registerT
       <button type="button" :class="{ active: repaymentMode === 'long' }" :aria-pressed="repaymentMode === 'long'" @click="repaymentMode = 'long'">Растянуть на 30 лет<small>минимальный платёж</small></button>
     </div>
     <template v-if="plan">
-      <p class="big-label">Дата покупки</p>
+      <p class="big-label">Покупка возможна через</p>
       <p class="big">{{ duration(plan.dealMonth) }}</p>
       <p class="muted mortgage-date">{{ formatDate(addMonths(referenceDate, plan.dealMonth)) }}</p>
       <dl>
@@ -195,7 +198,6 @@ onMounted(() => { const context = document.modelContext; if (!context?.registerT
         <div v-if="renovationNeeded"><dt><span class="field-title">Накопить на ремонт <span class="hint" tabindex="0" aria-label="Что значит накопить на ремонт">?<span class="hint-popover" role="tooltip">Начальный запас, с которым нужно выйти к сделке: он рассчитан после учёта будущего свободного дохода и доходности накоплений. Это не полная стоимость ремонта и не часть, которую оплатит будущий доход, — свободный доход после аренды и платежа по кредиту сам покрывает часть равных платежей, а этот запас закрывает остальное.</span></span></span></dt><dd>{{ money.format(plan.savingsGoal.renovationSavings) }}</dd></div>
         <div v-if="renovationNeeded"><dt>Резерв на временный дефицит</dt><dd>{{ money.format(plan.savingsGoal.deficitReserve) }}</dd></div>
         <div class="wide goal-total"><dt>Всего необходимых накоплений</dt><dd>{{ money.format(plan.savingsGoal.totalRequiredSavings) }}</dd></div>
-        <div v-if="plan.savingsGoal.optionalSurplus > 0" class="wide goal-surplus"><dt>Необязательный излишек</dt><dd>{{ money.format(plan.savingsGoal.optionalSurplus) }}</dd></div>
       </dl>
       <p v-if="renovationNeeded" class="goal-caption">Необходимые накопления на ремонт и резерв учтены в датах покупки и переезда</p>
       <dl>
