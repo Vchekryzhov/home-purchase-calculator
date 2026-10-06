@@ -263,6 +263,29 @@ describe('slice 10: buildCashflow projection', () => {
   });
 });
 
+describe('maskSavingsAfterDeal: long-mode chart masking rule', () => {
+  it('keeps values before the deal month and hides savings from the deal month inclusive', () => {
+    expect(model.maskSavingsAfterDeal([10, 20, 30, 40], 2, true)).toEqual([10, 20, null, null]);
+  });
+  it('returns the values unchanged when hiding is disabled', () => {
+    const values = [10, 20, 30];
+    const masked = model.maskSavingsAfterDeal(values, 1, false);
+    expect(masked).toEqual([10, 20, 30]);
+    expect(masked).not.toBe(values);
+  });
+  it('hides the whole series when the deal lands in month 0', () => {
+    expect(model.maskSavingsAfterDeal([10, 20, 30], 0, true)).toEqual([null, null, null]);
+  });
+  it('is a no-op when the deal month is beyond the series', () => {
+    expect(model.maskSavingsAfterDeal([10, 20], 5, true)).toEqual([10, 20]);
+  });
+  it('never mutates the input series', () => {
+    const values = [10, 20, 30];
+    model.maskSavingsAfterDeal(values, 1, true);
+    expect(values).toEqual([10, 20, 30]);
+  });
+});
+
 describe('slice 6: contractual amortization and L-limited totals', () => {
   for (const id of ['matrix-no-renovation-long', 'target-interior-floor', 'rich-long', 'target-yield-reserve-nominal']) {
     it(`retains cash and pays the original annuity: ${id}`, () => {
@@ -562,11 +585,11 @@ describe('paymentForTerm and rentPaidUntilMonth units', () => {
 });
 
 describe('export surface: exactly the contract symbols', () => {
-  it('exports the ten contract names and no compatibility aliases', () => {
+  it('exports the eleven contract names and no compatibility aliases', () => {
     expect(Object.keys(model).sort()).toEqual([
       'AFFORDABILITY_HORIZON_MONTHS', 'DEFAULTS', 'MAX_LOAN_MONTHS', 'NO_RENOVATION',
       'RENOVATION_COST_SHARE', 'SIMULATION_HORIZON_MONTHS',
-      'buildCashflow', 'calculate', 'paymentForTerm', 'rentPaidUntilMonth'
+      'buildCashflow', 'calculate', 'maskSavingsAfterDeal', 'paymentForTerm', 'rentPaidUntilMonth'
     ].sort());
   });
   it('keeps the contract constant values', () => {
