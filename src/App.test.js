@@ -50,7 +50,7 @@ describe('App: public UI through mounted component', () => {
     await settle();
     const mortgage = wrapper.find('article.card.mortgage');
     expect(mortgage.find('.kicker').text()).toBe('Ипотека');
-    expect(mortgage.find('.big-label').text()).toBe('Дата покупки');
+    expect(mortgage.find('.big-label').text()).toBe('Покупка возможна через');
     expect(mortgage.find('.big').text()).toBe('3 года 5 месяцев');
     expect(norm(ddText(wrapper, 'Минимальный первоначальный взнос'))).toBe('2362799₽');
     expect(norm(ddText(wrapper, 'Фактический первоначальный взнос'))).toBe('2362799₽');

@@ -189,7 +189,7 @@ onMounted(() => { const context = document.modelContext; if (!context?.registerT
       <button type="button" :class="{ active: repaymentMode === 'long' }" :aria-pressed="repaymentMode === 'long'" @click="repaymentMode = 'long'">Растянуть на 30 лет<small>минимальный платёж</small></button>
     </div>
     <template v-if="plan">
-      <p class="big-label">Дата покупки</p>
+      <p class="big-label">Покупка возможна через</p>
       <p class="big">{{ duration(plan.dealMonth) }}</p>
       <p class="muted mortgage-date">{{ formatDate(addMonths(referenceDate, plan.dealMonth)) }}</p>
       <dl>
