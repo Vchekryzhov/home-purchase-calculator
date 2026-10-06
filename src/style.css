@@ -44,10 +44,8 @@ dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 
 .goal-total dd { font-weight: 800; font-size: 16px; }
 .goal-surplus dt, .goal-surplus dd { color: #8fd5cc; font-weight: 500; }
 .goal-caption { margin: 12px 0 0; color: #bceae4; font-size: 12.5px; line-height: 1.5; }
-.bottom { display: grid; grid-template-columns: 1.15fr .85fr; gap: 16px; margin-top: 18px; }.bottom .card { min-height: auto; }.threshold .big-label { color: #0f766e; }.threshold dl { border-color: #dbe3e8; color: #0f172a; }.threshold dt { color: #64748b; }
-.threshold-action { margin-top: 10px; border-color: #5eead4; color: #0f766e; font-weight: 700; }
-.threshold-action:hover { background: #f0fdfa; }
-.selected-criterion { margin: 14px 0 0; }.year { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }.year > div { padding: 14px; border-radius: 16px; background: #f8fafc; }.year small { color: #64748b; display: block; }.year strong { display: block; margin-top: 5px; font-size: 18px; letter-spacing: -.02em; }.how { background: #f0fdfa; border-color: #b7e8dd; }.how p { line-height: 1.55; margin: 10px 0 0; color: #475569; font-size: 14px; }
+.bottom { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 18px; }.bottom .card { min-height: auto; }
+.how { background: #f0fdfa; border-color: #b7e8dd; }.how p { line-height: 1.55; margin: 10px 0 0; color: #475569; font-size: 14px; }
 .warning { margin: 16px 0 0; padding: 14px 16px; color: #9f1239; background: #fff1f2; border: 1px solid #fecdd3; border-radius: 16px; font-size: 14px; line-height: 1.45; }.empty { margin-top: 32px; padding: 16px; border: 1px solid #f5d89b; border-radius: 16px; color: #78350f; background: rgba(255,255,255,.72); font-size: 14px; line-height: 1.5; }
 
 .chart-legend span { display: inline-flex; align-items: center; gap: 7px; }.chart-legend i { width: 14px; height: 14px; border-radius: 4px; }
@@ -67,4 +65,4 @@ dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 
 .state-toggle.mini button { min-height: 34px; padding: 6px 12px; font-size: 12.5px; }
 
 @media (max-width: 900px) { .layout { grid-template-columns: 1fr; }.inputs { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 620px) { main { padding: 22px 16px 32px; } header { align-items: start; flex-direction: column; margin-bottom: 20px; }.inputs, .cards, .bottom, .year { grid-template-columns: 1fr; }.panel, .card { padding: 20px; border-radius: 20px; }.hint-popover { left: -160px; max-width: calc(100vw - 176px); }.hint-popover th, .hint-popover td { padding: 2.5px 2px; } }
+@media (max-width: 620px) { main { padding: 22px 16px 32px; } header { align-items: start; flex-direction: column; margin-bottom: 20px; }.inputs, .cards, .bottom { grid-template-columns: 1fr; }.panel, .card { padding: 20px; border-radius: 20px; }.hint-popover { left: -160px; max-width: calc(100vw - 176px); }.hint-popover th, .hint-popover td { padding: 2.5px 2px; } }
