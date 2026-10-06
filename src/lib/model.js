@@ -1,4 +1,4 @@
-export const DEFAULTS = { savings: 0, monthlySavings: 50000, mortgageRate: 16.9, propertyPrice: 10000000, downPaymentPercent: 20, inflation: 5, rent: 80000, depositRate: 11.5 };
+export const DEFAULTS = { savings: 0, monthlySavings: 50000, mortgageRate: 16.9, propertyPrice: 10000000, downPaymentPercent: 20, inflation: 5, rent: 80000, depositRate: 11.5, salaryIndexPercent: 5 };
 export const SIMULATION_HORIZON_MONTHS = 720;
 export const AFFORDABILITY_HORIZON_MONTHS = 360;
 export const MAX_LOAN_MONTHS = 360;
@@ -48,33 +48,33 @@ const expenses = (context, dealMonth, workMonths, installment, principal, annuit
   return { base, full };
 };
 
-const prefixReserve = (schedule, budget, q) => {
+const prefixReserve = (schedule, incomes, start, q) => {
   let prefix = 0, reserve = 0, discount = 1;
-  for (const expense of schedule) {
+  for (let t = 0; t < schedule.length; t += 1) {
     discount /= q;
-    prefix += (expense - budget) * discount;
+    prefix += (schedule[t] - incomes[start + t]) * discount;
     reserve = Math.max(reserve, prefix);
   }
   return reserve;
 };
 
-const backwardReserve = (schedule, budget, q) => {
+const backwardReserve = (schedule, incomes, start, q) => {
   let reserve = 0;
-  for (let t = schedule.length - 1; t >= 0; t -= 1) reserve = Math.max(0, (schedule[t] - budget + reserve) / q);
+  for (let t = schedule.length - 1; t >= 0; t -= 1) reserve = Math.max(0, (schedule[t] - incomes[start + t] + reserve) / q);
   return reserve;
 };
 
 const candidate = (context, month, cashPurchase) => {
-  const { inputs, workMonths, renovationCost, budget, growth, waiting, rents } = context;
+  const { inputs, workMonths, renovationCost, growth, waiting, rents, incomes } = context;
   const index = Math.pow(growth, month / 12), price = inputs.propertyPrice * index;
   const minimumDownPayment = price * inputs.downPaymentPercent / 100;
-  const down = cashPurchase ? price : Math.max(minimumDownPayment, price - budget / paymentForTerm(1, inputs.mortgageRate), 0);
+  const down = cashPurchase ? price : Math.max(minimumDownPayment, price - incomes[month] / paymentForTerm(1, inputs.mortgageRate), 0);
   if (down > price) return null;
   const principal = price - down, annuity = paymentForTerm(principal, inputs.mortgageRate);
   const cost = renovationCost * index, installment = workMonths ? cost / workMonths : 0;
   const schedule = expenses(context, month, workMonths, installment, principal, annuity);
-  const totalReserve = prefixReserve(schedule.full, budget, context.q);
-  const deficitReserve = prefixReserve(schedule.base, budget, context.q);
+  const totalReserve = prefixReserve(schedule.full, incomes, month, context.q);
+  const deficitReserve = prefixReserve(schedule.base, incomes, month, context.q);
   const totalRequiredSavings = down + totalReserve;
   if (waiting[month] < totalRequiredSavings) return null;
   return {
@@ -92,7 +92,7 @@ const candidate = (context, month, cashPurchase) => {
 
 const protectionAfter = (context, plan, month, principal) => {
   const remaining = expenses(context, plan.dealMonth, plan.workMonths, plan.renovationMonthlyPayment, principal, plan.loan?.contractualAnnuity ?? 0, month + 1);
-  return backwardReserve(remaining.full, context.budget, context.q);
+  return backwardReserve(remaining.full, context.incomes, month + 1, context.q);
 };
 
 const fillLedger = (context, plan, fast) => {
@@ -109,7 +109,7 @@ const fillLedger = (context, plan, fast) => {
     const purchaseCapital = month === dealMonth ? plan.savingsGoal.actualDownPayment + plan.savingsGoal.cashPurchasePrice : 0;
     const cashAfterDeal = openingCash - purchaseCapital;
     const depositYield = (context.q - 1) * cashAfterDeal;
-    const budgetIncome = context.budget;
+    const budgetIncome = context.incomes[month];
     const rent = month < moveMonth ? context.rents[month] : 0;
     const renovation = month >= dealMonth && month < moveMonth ? plan.renovationMonthlyPayment : 0;
     const interest = balance * context.rate;
@@ -185,14 +185,20 @@ export const calculate = (rawInputs, repaymentMode, renovation = NO_RENOVATION, 
   const plans = { earliest: null, interestBelowRent: null, cash: null };
   if (!invalid) {
     const q = 1 + inputs.depositRate / 100 / 12;
-    const rents = [], waiting = [];
+    // The income series covers the search horizon plus a full loan term: ledger months may run
+    // past SIMULATION_HORIZON_MONTHS while reserve/protection windows are indexed by start month.
+    const salaryGrowth = 1 + inputs.salaryIndexPercent / 100;
+    const incomes = [], rents = [], waiting = [];
+    for (let month = 0; month <= SIMULATION_HORIZON_MONTHS + MAX_LOAN_MONTHS; month += 1) {
+      incomes.push(inputs.rent + inputs.monthlySavings * Math.pow(salaryGrowth, month / 12));
+      rents.push(inputs.rent * Math.pow(growth, month / 12));
+    }
     let balance = inputs.savings;
     for (let month = 0; month <= SIMULATION_HORIZON_MONTHS && balance >= 0; month += 1) {
       waiting.push(balance);
-      balance = q * balance + monthlyBudget - inputs.rent * Math.pow(growth, month / 12);
+      balance = q * balance + incomes[month] - rents[month];
     }
-    for (let month = 0; month <= SIMULATION_HORIZON_MONTHS; month += 1) rents.push(inputs.rent * Math.pow(growth, month / 12));
-    const context = { inputs, workMonths, renovationCost, budget: monthlyBudget, growth, q, rate: inputs.mortgageRate / 100 / 12, waiting, rents };
+    const context = { inputs, workMonths, renovationCost, growth, q, rate: inputs.mortgageRate / 100 / 12, waiting, rents, incomes };
     for (let month = 0; month < waiting.length && month + workMonths <= SIMULATION_HORIZON_MONTHS; month += 1) {
       const needMortgage = (!plans.earliest && month <= AFFORDABILITY_HORIZON_MONTHS) || !plans.interestBelowRent;
       const mortgage = needMortgage ? candidate(context, month, false) : null;
