@@ -42,7 +42,6 @@ input:focus { outline: 3px solid #ccfbf1; border-color: #0f766e; }
 .big-label { margin: 34px 0 4px; font-size: 14px; color: #bceae4; }.cash .big-label { color: #866520; }.big { margin: 0; font-weight: 750; font-size: 30px; letter-spacing: -.045em; }
 dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 12px; margin: 28px 0 0; padding-top: 20px; border-top: 1px solid rgba(255,255,255,.18); }.cash dl { border-color: #f5d89b; color: #334155; }dt { font-size: 13px; color: #bceae4; }.cash dt { color: #866520; }dd { margin: 5px 0 0; font-size: 14px; font-weight: 700; line-height: 1.35; }.wide { grid-column: 1 / -1; }
 .goal-total dd { font-weight: 800; font-size: 16px; }
-.goal-surplus dt, .goal-surplus dd { color: #8fd5cc; font-weight: 500; }
 .goal-caption { margin: 12px 0 0; color: #bceae4; font-size: 12.5px; line-height: 1.5; }
 .bottom { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 18px; }.bottom .card { min-height: auto; }
 .how { background: #f0fdfa; border-color: #b7e8dd; }.how p { line-height: 1.55; margin: 10px 0 0; color: #475569; font-size: 14px; }
