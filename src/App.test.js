@@ -105,6 +105,14 @@ describe('App: public UI through mounted component', () => {
     expect(wrapper.find('article.card.mortgage .big').text()).toBe('7 лет 9 месяцев');
     expect(norm(ddText(wrapper, 'Накопить на ремонт'))).toBe('2117719₽');
     expect(norm(ddText(wrapper, 'Резерв на временный дефицит'))).toBe('680244₽');
+    expect(norm(ddText(wrapper, 'Ремонт на дату сделки'))).toBe('2189315₽·364886₽/мес.втечение6мес.');
+    const costLabel = () =>
+      wrapper.findAll('label.currency-field').find((label) => label.text().startsWith('Стоимость ремонта'));
+    const hintText = norm(costLabel().find('.hint-popover').text());
+    expect(hintText).toContain('1500000₽—сегодняшняя');
+    expect(hintText).toContain('Досделки7лет9месяцев');
+    expect(hintText).toContain('ремонтбудетстоить2189315₽');
+    expect(hintText).toContain('равнымиплатежамипо364886₽втечение6мес.');
     expect(dd(wrapper, 'Аренда до переезда')).not.toBeNull();
     expect(wrapper.findAll('.cf-badge').map((badge) => badge.text())).toEqual(['Сделка', 'Переезд']);
     expect(lastOption().series[0].markLine.data).toHaveLength(2);
@@ -115,6 +123,7 @@ describe('App: public UI through mounted component', () => {
     await settle();
     expect(wrapper.find('.renovation-fields').exists()).toBe(false);
     expect(dd(wrapper, 'Накопить на ремонт')).toBeNull();
+    expect(dd(wrapper, 'Ремонт на дату сделки')).toBeNull();
   });
 
   it('shows the validation message when renovation has cost but zero duration', async () => {
@@ -125,6 +134,7 @@ describe('App: public UI through mounted component', () => {
     await labelInput(wrapper, 'Срок ремонта').setValue('0');
     await settle();
     expect(wrapper.find('article.card.mortgage p.empty').text()).toBe('Для ремонта с ненулевой стоимостью укажите срок не менее 1 месяца');
+    expect(wrapper.findAll('label.currency-field').find((label) => label.text().startsWith('Стоимость ремонта')).find('.hint').exists()).toBe(false);
   });
 
   it('edits money inputs, filters non-digits and recalculates the plan', async () => {
@@ -137,6 +147,12 @@ describe('App: public UI through mounted component', () => {
     expect(norm(ddText(wrapper, 'Фактический первоначальный взнос'))).toBe('2000000₽');
     expect(norm(ddText(wrapper, 'Всего необходимых накоплений'))).toBe('2000000₽');
     expect(norm(ddText(wrapper, 'Необязательный излишек'))).toBe('4000000₽');
+    await button(wrapper, 'Без ремонта').trigger('click');
+    await settle();
+    const dealDateHint = norm(wrapper.findAll('label.currency-field').find((label) => label.text().startsWith('Стоимость ремонта')).find('.hint-popover').text());
+    expect(dealDateHint).toContain('втекущеммесяце');
+    expect(dealDateHint).toContain('стоимости1500000₽');
+    expect(dealDateHint).toContain('равнымиплатежамипо250000₽');
     const savings = amountInput(wrapper, 'Текущие накопления');
     await savings.trigger('focus');
     await savings.setValue('12abc34');
