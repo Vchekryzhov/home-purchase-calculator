@@ -198,7 +198,6 @@ onMounted(() => { const context = document.modelContext; if (!context?.registerT
         <div v-if="renovationNeeded"><dt><span class="field-title">Накопить на ремонт <span class="hint" tabindex="0" aria-label="Что значит накопить на ремонт">?<span class="hint-popover" role="tooltip">Начальный запас, с которым нужно выйти к сделке: он рассчитан после учёта будущего свободного дохода и доходности накоплений. Это не полная стоимость ремонта и не часть, которую оплатит будущий доход, — свободный доход после аренды и платежа по кредиту сам покрывает часть равных платежей, а этот запас закрывает остальное.</span></span></span></dt><dd>{{ money.format(plan.savingsGoal.renovationSavings) }}</dd></div>
         <div v-if="renovationNeeded"><dt>Резерв на временный дефицит</dt><dd>{{ money.format(plan.savingsGoal.deficitReserve) }}</dd></div>
         <div class="wide goal-total"><dt>Всего необходимых накоплений</dt><dd>{{ money.format(plan.savingsGoal.totalRequiredSavings) }}</dd></div>
-        <div v-if="plan.savingsGoal.optionalSurplus > 0" class="wide goal-surplus"><dt>Необязательный излишек</dt><dd>{{ money.format(plan.savingsGoal.optionalSurplus) }}</dd></div>
       </dl>
       <p v-if="renovationNeeded" class="goal-caption">Необходимые накопления на ремонт и резерв учтены в датах покупки и переезда</p>
       <dl>
